@@ -71,6 +71,8 @@ export default function SettingsPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('Tag');
   const [newCatColor, setNewCatColor] = useState('#F59E0B');
+  const [categoryType, setCategoryType] = useState<'expense' | 'income'>('expense');
+  const [selectedCatFilter, setSelectedCatFilter] = useState<'all' | 'expense' | 'income'>('expense');
 
   // Supabase cloud credentials state
   const [supabaseUrl, setSupabaseUrl] = useState('');
@@ -160,7 +162,7 @@ export default function SettingsPage() {
       name: newCatName.trim(),
       icon: newCatIcon,
       color: newCatColor,
-      type: 'expense',
+      type: categoryType,
     });
     setNewCatName('');
   };
@@ -394,13 +396,48 @@ CREATE POLICY "Allow public sync access"
           {/* Add Category Form */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-4">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Add New Expense Category</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                Add New {categoryType === 'income' ? 'Income' : 'Expense'} Category
+              </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Customize your categories for fine-grained expense tracking.
+                Customize your income sources and expense categories for comprehensive budgeting.
               </p>
             </div>
 
-            <form onSubmit={handleAddCategorySubmit} className="space-y-3 pt-1">
+            {/* Category Type Switcher */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Category Type:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryType('expense');
+                  setSelectedCatFilter('expense');
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  categoryType === 'expense'
+                    ? 'bg-amber-400 text-slate-950 shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Expense Category
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryType('income');
+                  setSelectedCatFilter('income');
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  categoryType === 'income'
+                    ? 'bg-emerald-500 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Income Category
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCategorySubmit} className="space-y-3 pt-2">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
                   <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase">
@@ -409,7 +446,11 @@ CREATE POLICY "Allow public sync access"
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Halal Investments, Sadaqah, Gym"
+                    placeholder={
+                      categoryType === 'expense'
+                        ? 'e.g. Groceries, Gym, Halal Charity, Books'
+                        : 'e.g. Consulting, Freelance Client, YouTube, Bonus'
+                    }
                     value={newCatName}
                     onChange={(e) => setNewCatName(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-medium"
@@ -448,7 +489,9 @@ CREATE POLICY "Allow public sync access"
                       onClick={() => setNewCatIcon(ic)}
                       className={`p-2 rounded-lg transition-all flex items-center justify-center ${
                         newCatIcon === ic
-                          ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-500 font-bold'
+                          ? categoryType === 'income'
+                            ? 'bg-emerald-500 text-white ring-2 ring-emerald-600 font-bold'
+                            : 'bg-amber-400 text-slate-950 ring-2 ring-amber-500 font-bold'
                           : 'bg-white text-slate-600 hover:bg-slate-200'
                       }`}
                     >
@@ -460,55 +503,110 @@ CREATE POLICY "Allow public sync access"
 
               <button
                 type="submit"
-                className="px-4 py-2.5 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5"
+                className={`px-4 py-2.5 text-xs font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5 ${
+                  categoryType === 'income'
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                    : 'bg-amber-400 hover:bg-amber-500 text-slate-950'
+                }`}
               >
                 <Plus className="w-4 h-4" />
-                Add Category
+                Add {categoryType === 'income' ? 'Income' : 'Expense'} Category
               </button>
             </form>
           </div>
 
           {/* Existing Categories Grid */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <h3 className="text-sm font-bold text-slate-900">
                 Active Categories ({categories.length})
               </h3>
-              <span className="text-[11px] text-slate-400 font-medium">
-                Click trash to remove custom categories
-              </span>
+
+              {/* Sub-filters for active list */}
+              <div className="flex items-center gap-1.5 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCatFilter('expense')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    selectedCatFilter === 'expense'
+                      ? 'bg-amber-100 text-amber-950 font-bold'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  Expenses ({categories.filter((c) => c.type === 'expense' || !c.type).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCatFilter('income')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    selectedCatFilter === 'income'
+                      ? 'bg-emerald-100 text-emerald-950 font-bold'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  Income ({categories.filter((c) => c.type === 'income').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCatFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    selectedCatFilter === 'all'
+                      ? 'bg-slate-200 text-slate-900 font-bold'
+                      : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  All ({categories.length})
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-2">
-              {categories.map((c) => (
-                <div
-                  key={c.id}
-                  className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-between gap-2 text-xs group hover:bg-white hover:border-slate-200 transition-all"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
-                      style={{ backgroundColor: c.color }}
-                    >
-                      <IconRenderer name={c.icon} className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="font-semibold text-slate-800 truncate">{c.name}</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm(`Delete category "${c.name}"?`)) {
-                        deleteCategory(c.id);
-                      }
-                    }}
-                    title="Delete category"
-                    className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+              {categories
+                .filter((c) => {
+                  if (selectedCatFilter === 'expense') return c.type === 'expense' || !c.type;
+                  if (selectedCatFilter === 'income') return c.type === 'income';
+                  return true;
+                })
+                .map((c) => (
+                  <div
+                    key={c.id}
+                    className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-between gap-2 text-xs group hover:bg-white hover:border-slate-200 transition-all"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
+                        style={{ backgroundColor: c.color }}
+                      >
+                        <IconRenderer name={c.icon} className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-800 truncate block">{c.name}</span>
+                        {selectedCatFilter === 'all' && (
+                          <span
+                            className={`text-[9px] font-bold uppercase ${
+                              c.type === 'income' ? 'text-emerald-600' : 'text-amber-600'
+                            }`}
+                          >
+                            {c.type === 'income' ? 'Income' : 'Expense'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Delete category "${c.name}"?`)) {
+                          deleteCategory(c.id);
+                        }
+                      }}
+                      title="Delete category"
+                      className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
             </div>
           </div>
         </div>

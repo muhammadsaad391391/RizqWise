@@ -352,7 +352,7 @@ export default function TransactionsPage() {
           {/* Category Filter */}
           <div>
             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-              Category
+              Expense Category
             </label>
             <select
               value={selectedCategory}
@@ -360,11 +360,13 @@ export default function TransactionsPage() {
               className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
             >
               <option value="all">All Categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
+              {categories
+                .filter((c) => c.type === 'expense' || !c.type)
+                .map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -379,7 +381,12 @@ export default function TransactionsPage() {
               className="w-full p-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-400"
             >
               <option value="all">All Sources</option>
-              {INCOME_SOURCES.map((s) => (
+              {Array.from(
+                new Set([
+                  ...categories.filter((c) => c.type === 'income').map((c) => c.name),
+                  ...INCOME_SOURCES,
+                ])
+              ).map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>

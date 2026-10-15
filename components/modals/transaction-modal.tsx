@@ -36,11 +36,16 @@ export function TransactionModal({
 
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'transfer'>(initialType);
 
-  // Inline Category Creation State
+  // Inline Category Creation State (Expense & Income)
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('Tag');
   const [newCatColor, setNewCatColor] = useState('#F59E0B');
+
+  const [isCreatingIncomeCat, setIsCreatingIncomeCat] = useState(false);
+  const [newIncomeCatName, setNewIncomeCatName] = useState('');
+  const [newIncomeCatIcon, setNewIncomeCatIcon] = useState('Coins');
+  const [newIncomeCatColor, setNewIncomeCatColor] = useState('#10B981');
 
   // Inline Allocation Adjustment State
   const [isEditingRulesInline, setIsEditingRulesInline] = useState(false);
@@ -100,14 +105,27 @@ export function TransactionModal({
         setToFundId(activeFunds[1].id);
       }
 
-      if (categories.length > 0) {
-        setSelectedCategoryId(categories[0].id);
-        setExpenseTitle(categories[0].name);
+      const expCats = categories.filter((c) => c.type === 'expense' || !c.type);
+      if (expCats.length > 0) {
+        setSelectedCategoryId(expCats[0].id);
+        setExpenseTitle(expCats[0].name);
+      }
+      const incCats = categories.filter((c) => c.type === 'income');
+      if (incCats.length > 0) {
+        setIncomeSource(incCats[0].name);
       }
     }
   }, [isOpen, initialType, initialFundId, funds, categories]);
 
   const activeFunds = useMemo(() => funds.filter((f) => !f.isArchived), [funds]);
+  const expenseCategories = useMemo(
+    () => categories.filter((c) => c.type === 'expense' || !c.type),
+    [categories]
+  );
+  const incomeCategories = useMemo(
+    () => categories.filter((c) => c.type === 'income'),
+    [categories]
+  );
   const numAmount = parseFloat(amountStr) || 0;
 
   // Selected Fund Balance for Expense
@@ -523,7 +541,7 @@ export function TransactionModal({
                 )}
 
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 max-h-48 overflow-y-auto p-1">
-                  {categories.map((cat) => {
+                  {expenseCategories.map((cat) => {
                     const isSelected = selectedCategoryId === cat.id;
                     return (
                       <button
@@ -633,34 +651,110 @@ export function TransactionModal({
           {/* TAB 2: INCOME FORM WITH AUTOMATIC FUND ALLOCATION */}
           {activeTab === 'income' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Income Source <span className="text-red-500">*</span>
+              {/* Income Category Grid */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Income Category / Source <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={incomeSource}
-                    onChange={(e) => setIncomeSource(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none bg-white"
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingIncomeCat(!isCreatingIncomeCat)}
+                    className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1"
                   >
-                    {INCOME_SOURCES.map((src) => (
-                      <option key={src} value={src}>
-                        {src}
-                      </option>
-                    ))}
-                  </select>
+                    <Plus className="w-3.5 h-3.5" />
+                    {isCreatingIncomeCat ? 'Cancel' : 'New Category'}
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Date Received <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
-                  />
+
+                {/* Inline Income Category Creator */}
+                {isCreatingIncomeCat && (
+                  <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2 text-xs">
+                    <span className="font-bold text-emerald-950 block">Create Income Category</span>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Income Category (e.g. YouTube, Consulting, Bonus)"
+                        value={newIncomeCatName}
+                        onChange={(e) => setNewIncomeCatName(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs border border-emerald-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newIncomeCatName.trim()) return;
+                          const created = addCategory({
+                            name: newIncomeCatName.trim(),
+                            icon: newIncomeCatIcon,
+                            color: newIncomeCatColor,
+                            type: 'income',
+                          });
+                          setIncomeSource(created.name);
+                          setNewIncomeCatName('');
+                          setIsCreatingIncomeCat(false);
+                        }}
+                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 font-bold text-white rounded-lg transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 max-h-44 overflow-y-auto p-1">
+                  {incomeCategories.map((cat) => {
+                    const isSelected = incomeSource === cat.name;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setIncomeSource(cat.name)}
+                        className={`flex flex-col items-center p-2 rounded-xl border transition-all text-center ${
+                          isSelected
+                            ? 'bg-emerald-50 border-emerald-500 shadow-sm scale-105'
+                            : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform ${
+                            isSelected ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          <IconRenderer name={cat.icon} className="w-5 h-5" />
+                        </div>
+                        <span className="text-[11px] font-medium text-slate-700 mt-1.5 leading-tight line-clamp-1">
+                          {cat.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  {/* + Button at end of category grid */}
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingIncomeCat(!isCreatingIncomeCat)}
+                    className="flex flex-col items-center p-2 rounded-xl border border-dashed border-slate-300 hover:border-emerald-400 hover:bg-emerald-50/50 transition-all text-center"
+                  >
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500 hover:text-emerald-700 hover:bg-emerald-100 transition-colors">
+                      <Plus className="w-5 h-5 stroke-[2.5]" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-slate-600 mt-1.5 leading-tight">
+                      + Add
+                    </span>
+                  </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Date Received <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
               </div>
 
               <div>

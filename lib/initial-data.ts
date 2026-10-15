@@ -119,16 +119,27 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-travel', name: 'Travel', icon: 'Plane', color: '#0EA5E9', type: 'expense' },
   { id: 'cat-repairs', name: 'Repairs & Home', icon: 'Hammer', color: '#78716C', type: 'expense' },
   { id: 'cat-other-exp', name: 'Other', icon: 'MoreHorizontal', color: '#94A3B8', type: 'expense' },
+
+  // Income Categories
+  { id: 'cat-inc-salary', name: 'Salary', icon: 'Coins', color: '#10B981', type: 'income' },
+  { id: 'cat-inc-freelance', name: 'Freelancing', icon: 'Laptop', color: '#3B82F6', type: 'income' },
+  { id: 'cat-inc-business', name: 'Business Income', icon: 'Briefcase', color: '#F59E0B', type: 'income' },
+  { id: 'cat-inc-pocket', name: 'Pocket Money', icon: 'PiggyBank', color: '#EC4899', type: 'income' },
+  { id: 'cat-inc-investments', name: 'Investments', icon: 'TrendingUp', color: '#06B6D4', type: 'income' },
+  { id: 'cat-inc-gifts', name: 'Gifts & Eidi', icon: 'Gift', color: '#F43F5E', type: 'income' },
+  { id: 'cat-inc-rental', name: 'Rental Income', icon: 'Home', color: '#8B5CF6', type: 'income' },
+  { id: 'cat-inc-other', name: 'Other Income', icon: 'Sparkles', color: '#64748B', type: 'income' },
 ];
 
 export const INCOME_SOURCES = [
-  'Pocket Money',
   'Salary',
   'Freelancing',
   'Business Income',
-  'Gifts',
+  'Pocket Money',
   'Investments',
-  'Other',
+  'Gifts & Eidi',
+  'Rental Income',
+  'Other Income',
 ];
 
 export const PAYMENT_METHODS = [

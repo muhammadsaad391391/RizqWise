@@ -172,7 +172,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
           if (json.success && json.data) {
             if (json.data.funds && json.data.funds.length > 0) setFunds(json.data.funds);
             if (json.data.transactions) setTransactions(json.data.transactions);
-            if (json.data.categories && json.data.categories.length > 0) setCategories(json.data.categories);
+            if (json.data.categories && json.data.categories.length > 0) {
+              const hasIncome = json.data.categories.some((c: Category) => c.type === 'income');
+              const finalCats = hasIncome
+                ? json.data.categories
+                : [...json.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
+              setCategories(finalCats);
+            }
             if (json.data.settings) setSettings(json.data.settings);
             loaded = true;
           }
@@ -188,7 +194,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             const parsed = JSON.parse(cached);
             if (parsed.funds) setFunds(parsed.funds);
             if (parsed.transactions) setTransactions(parsed.transactions);
-            if (parsed.categories) setCategories(parsed.categories);
+            if (parsed.categories) {
+              const hasIncome = parsed.categories.some((c: Category) => c.type === 'income');
+              const finalCats = hasIncome
+                ? parsed.categories
+                : [...parsed.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
+              setCategories(finalCats);
+            }
             if (parsed.settings) setSettings(parsed.settings);
           }
         } catch (e) {
