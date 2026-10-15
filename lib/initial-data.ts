@@ -1,0 +1,149 @@
+import { Fund, Category, AppSettings } from '@/types/finance';
+
+export const DEFAULT_FUNDS: Fund[] = [
+  {
+    id: 'fund-investments',
+    name: 'Investments',
+    icon: 'TrendingUp',
+    color: '#0284C7', // Blue
+    allocationPercentage: 20,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'fund-business',
+    name: 'Business',
+    icon: 'Briefcase',
+    color: '#F59E0B', // Amber / Gold
+    allocationPercentage: 40,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 2,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'fund-personal',
+    name: 'Personal Expenses',
+    icon: 'ShoppingBag',
+    color: '#8B5CF6', // Purple
+    allocationPercentage: 15,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 3,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'fund-savings',
+    name: 'Savings',
+    icon: 'PiggyBank',
+    color: '#10B981', // Emerald
+    allocationPercentage: 10,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 4,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'fund-education',
+    name: 'Education',
+    icon: 'GraduationCap',
+    color: '#6366F1', // Indigo
+    allocationPercentage: 5,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 5,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'fund-emergency',
+    name: 'Emergency Fund',
+    icon: 'ShieldAlert',
+    color: '#EF4444', // Red
+    allocationPercentage: 5,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 6,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'fund-other',
+    name: 'Other',
+    icon: 'Sparkles',
+    color: '#64748B', // Slate
+    allocationPercentage: 5,
+    openingBalance: 0,
+    monthlyBudget: null,
+    isArchived: false,
+    order: 7,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'cat-food', name: 'Food', icon: 'Utensils', color: '#F59E0B', type: 'expense' },
+  { id: 'cat-transport', name: 'Transportation', icon: 'Bus', color: '#3B82F6', type: 'expense' },
+  { id: 'cat-shopping', name: 'Shopping', icon: 'ShoppingCart', color: '#EC4899', type: 'expense' },
+  { id: 'cat-education', name: 'Education', icon: 'GraduationCap', color: '#8B5CF6', type: 'expense' },
+  { id: 'cat-software', name: 'Software and Subscriptions', icon: 'Laptop', color: '#06B6D4', type: 'expense' },
+  { id: 'cat-marketing', name: 'Marketing', icon: 'Megaphone', color: '#F97316', type: 'expense' },
+  { id: 'cat-tools', name: 'Business Tools', icon: 'Wrench', color: '#64748B', type: 'expense' },
+  { id: 'cat-phone', name: 'Phone and Internet', icon: 'Smartphone', color: '#10B981', type: 'expense' },
+  { id: 'cat-health', name: 'Health', icon: 'HeartPulse', color: '#EF4444', type: 'expense' },
+  { id: 'cat-clothing', name: 'Clothing', icon: 'Shirt', color: '#A855F7', type: 'expense' },
+  { id: 'cat-housing', name: 'Housing', icon: 'Home', color: '#6366F1', type: 'expense' },
+  { id: 'cat-entertainment', name: 'Entertainment', icon: 'Gamepad2', color: '#14B8A6', type: 'expense' },
+  { id: 'cat-gifts', name: 'Gifts', icon: 'Gift', color: '#F43F5E', type: 'expense' },
+  { id: 'cat-travel', name: 'Travel', icon: 'Plane', color: '#0EA5E9', type: 'expense' },
+  { id: 'cat-repairs', name: 'Repairs', icon: 'Hammer', color: '#78716C', type: 'expense' },
+  { id: 'cat-charity', name: 'Charity & Sadaqah', icon: 'Heart', color: '#059669', type: 'expense' },
+  { id: 'cat-halal-dining', name: 'Halal Dining', icon: 'Coffee', color: '#D97706', type: 'expense' },
+  { id: 'cat-other-exp', name: 'Other', icon: 'MoreHorizontal', color: '#94A3B8', type: 'expense' },
+];
+
+export const INCOME_SOURCES = [
+  'Pocket Money',
+  'Salary',
+  'Freelancing',
+  'Business Income',
+  'Gifts',
+  'Investments',
+  'Other',
+];
+
+export const PAYMENT_METHODS = [
+  'Cash',
+  'Bank Transfer',
+  'Debit Card',
+  'Credit Card',
+  'Mobile Wallet (EasyPaisa)',
+  'Mobile Wallet (JazzCash)',
+  'Online / Other',
+];
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  appName: 'RizqFlow',
+  tagline: 'Know where your money goes.',
+  currency: 'PKR',
+  currencySymbol: 'Rs.',
+  currencyPosition: 'prefix',
+  dateFormat: 'dd/MM/yyyy',
+  monthStartDay: 1,
+  allowNegativeBalance: false,
+  onboardingCompleted: false,
+  budgetWarningThreshold: 80,
+};
