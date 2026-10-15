@@ -18,6 +18,7 @@ import {
   calculateAllocations,
   validateAllocationRules,
 } from '@/lib/finance-engine';
+import { pushToSupabase, pullFromSupabase } from '@/lib/supabase';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
 
 interface FinanceContextType {
@@ -72,7 +73,10 @@ interface FinanceContextType {
   updateFund: (id: string, updated: Partial<Fund>) => { success: boolean; error?: string };
   deleteFund: (id: string) => { success: boolean; error?: string };
   updateAllocationRules: (rules: { fundId: string; percentage: number }[]) => { success: boolean; error?: string };
-  addCategory: (category: { name: string; icon: string; color: string; type: 'expense' | 'income' }) => void;
+  addCategory: (category: { name: string; icon: string; color: string; type: 'expense' | 'income' }) => Category;
+  deleteCategory: (id: string) => void;
+  syncWithCloud: (customUrl?: string, customKey?: string) => Promise<{ success: boolean; message: string }>;
+  pullLatestFromCloud: (customUrl?: string, customKey?: string) => Promise<{ success: boolean; message: string }>;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   importData: (data: { funds?: Fund[]; transactions?: Transaction[]; categories?: Category[]; settings?: AppSettings }) => boolean;
   resetToDefaults: () => void;
@@ -131,6 +135,27 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         });
       } catch (err) {
         console.error('Failed to sync data to server API:', err);
+      }
+
+      // 3. Sync to Supabase cloud if enabled
+      try {
+        const url = newSettings.supabaseUrl || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const key = newSettings.supabaseAnonKey || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (url && key) {
+          await pushToSupabase(
+            {
+              funds: newFunds,
+              transactions: newTransactions,
+              categories: newCategories,
+              settings: newSettings,
+            },
+            url,
+            key
+          );
+        }
+      } catch (err) {
+        console.error('Failed to sync data to Supabase cloud:', err);
       }
     },
     []
@@ -588,8 +613,91 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       const nextCategories = [...categories, newCat];
       setCategories(nextCategories);
       persistState(funds, transactions, nextCategories, settings);
+      return newCat;
     },
     [categories, funds, transactions, settings, persistState]
+  );
+
+  // Delete Category
+  const deleteCategory = useCallback(
+    (id: string) => {
+      const nextCategories = categories.filter((c) => c.id !== id);
+      setCategories(nextCategories);
+      persistState(funds, transactions, nextCategories, settings);
+    },
+    [categories, funds, transactions, settings, persistState]
+  );
+
+  // Sync with Cloud Database
+  const syncWithCloud = useCallback(
+    async (customUrl?: string, customKey?: string) => {
+      const url = customUrl || settings.supabaseUrl || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = customKey || settings.supabaseAnonKey || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (!url || !key) {
+        return { success: false, message: 'Please enter your Supabase Project URL and Anon API Key.' };
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('rizqflow_supabase_url', url);
+        localStorage.setItem('rizqflow_supabase_key', key);
+      }
+
+      const res = await pushToSupabase(
+        { funds, transactions, categories, settings },
+        url,
+        key
+      );
+
+      if (!res.success) {
+        return { success: false, message: res.error || 'Failed to sync with Supabase cloud.' };
+      }
+
+      const updatedSettings: AppSettings = {
+        ...settings,
+        supabaseUrl: url,
+        supabaseAnonKey: key,
+        cloudSyncEnabled: true,
+        lastSyncedAt: new Date().toISOString(),
+      };
+      setSettings(updatedSettings);
+      persistState(funds, transactions, categories, updatedSettings);
+
+      return {
+        success: true,
+        message: 'Connected & Synced! All your devices with these credentials will stay in sync.',
+      };
+    },
+    [funds, transactions, categories, settings, persistState]
+  );
+
+  // Pull latest from Cloud Database
+  const pullLatestFromCloud = useCallback(
+    async (customUrl?: string, customKey?: string) => {
+      const url = customUrl || settings.supabaseUrl || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = customKey || settings.supabaseAnonKey || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (!url || !key) {
+        return { success: false, message: 'Supabase credentials missing.' };
+      }
+
+      const res = await pullFromSupabase(url, key);
+      if (res.success && res.data) {
+        if (res.data.funds) setFunds(res.data.funds);
+        if (res.data.transactions) setTransactions(res.data.transactions);
+        if (res.data.categories) setCategories(res.data.categories);
+        if (res.data.settings) setSettings(res.data.settings);
+        persistState(
+          res.data.funds || funds,
+          res.data.transactions || transactions,
+          res.data.categories || categories,
+          res.data.settings || settings
+        );
+        return { success: true, message: 'Latest financial data successfully loaded from cloud!' };
+      }
+      return { success: false, message: res.error || 'No remote cloud data found yet.' };
+    },
+    [funds, transactions, categories, settings, persistState]
   );
 
   // Update Settings
@@ -655,6 +763,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         deleteFund,
         updateAllocationRules,
         addCategory,
+        deleteCategory,
+        syncWithCloud,
+        pullLatestFromCloud,
         updateSettings,
         importData,
         resetToDefaults,

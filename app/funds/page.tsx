@@ -98,9 +98,12 @@ export default function FundsPage() {
         name: fundName.trim(),
         icon: fundIcon,
         color: fundColor,
+        allocationPercentage: parseFloat(fundPercentage) || 0,
+        openingBalance: parseFloat(fundOpeningBalance) || 0,
         monthlyBudget: fundBudget ? parseFloat(fundBudget) : null,
       });
       setEditingFund(null);
+      setIsAddModalOpen(false);
     } else {
       addFund({
         name: fundName.trim(),
@@ -411,56 +414,53 @@ export default function FundsPage() {
                 </div>
               </div>
 
-              {/* Opening balance & Monthly budget */}
-              {!editingFund && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      Initial Capital ({settings.currencySymbol})
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="0"
-                      value={fundOpeningBalance}
-                      onChange={(e) => setFundOpeningBalance(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      Monthly Budget Cap
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="Optional"
-                      value={fundBudget}
-                      onChange={(e) => setFundBudget(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {editingFund && (
+              {/* Allocation % & Initial Capital & Monthly budget */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Monthly Budget Cap ({settings.currencySymbol})
+                    Allocation % of Income
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    placeholder="e.g. 20"
+                    value={fundPercentage}
+                    onChange={(e) => setFundPercentage(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Starting Capital ({settings.currencySymbol})
                   </label>
                   <input
                     type="number"
                     min="0"
                     step="any"
-                    placeholder="Optional monthly spending cap"
-                    value={fundBudget}
-                    onChange={(e) => setFundBudget(e.target.value)}
+                    placeholder="0"
+                    value={fundOpeningBalance}
+                    onChange={(e) => setFundOpeningBalance(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
                   />
                 </div>
-              )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Monthly Spending Budget Cap ({settings.currencySymbol})
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="Optional monthly spending cap"
+                  value={fundBudget}
+                  onChange={(e) => setFundBudget(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+              </div>
 
               <div className="pt-2 flex justify-end gap-2">
                 <button

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useFinance } from '@/lib/context/finance-context';
 import { IconRenderer } from '@/components/common/icon-renderer';
 import {
@@ -18,6 +18,12 @@ import {
   ExternalLink,
   Layers,
   Sparkles,
+  Trash2,
+  Cloud,
+  RefreshCw,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Check,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -30,6 +36,18 @@ const CURRENCIES = [
   { code: 'GBP', symbol: '£', label: 'British Pound (GBP)' },
 ];
 
+const AVAILABLE_ICONS = [
+  'Tag', 'Coffee', 'Fuel', 'Dumbbell', 'Receipt', 'Briefcase',
+  'Utensils', 'Car', 'ShoppingBag', 'GraduationCap', 'Laptop',
+  'Megaphone', 'Smartphone', 'HeartPulse', 'Shirt', 'Home',
+  'Plane', 'Wrench', 'Gift', 'ShieldAlert', 'PiggyBank', 'TrendingUp'
+];
+
+const PRESET_COLORS = [
+  '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#EC4899', '#8B5CF6',
+  '#14B8A6', '#F97316', '#EF4444', '#64748B'
+];
+
 export default function SettingsPage() {
   const {
     settings,
@@ -39,17 +57,35 @@ export default function SettingsPage() {
     updateSettings,
     updateFund,
     addCategory,
+    deleteCategory,
     importData,
     resetToDefaults,
+    syncWithCloud,
+    pullLatestFromCloud,
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState<'general' | 'budgets' | 'categories' | 'backup' | 'cloud'>('general');
   const [copiedSql, setCopiedSql] = useState(false);
 
-  // New Category form
+  // Category form state
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('Tag');
   const [newCatColor, setNewCatColor] = useState('#F59E0B');
+
+  // Supabase cloud credentials state
+  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedUrl = settings.supabaseUrl || localStorage.getItem('rizqflow_supabase_url') || '';
+      const storedKey = settings.supabaseAnonKey || localStorage.getItem('rizqflow_supabase_key') || '';
+      setSupabaseUrl(storedUrl);
+      setSupabaseKey(storedKey);
+    }
+  }, [settings.supabaseUrl, settings.supabaseAnonKey]);
 
   // File upload input ref for JSON restore
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,55 +163,71 @@ export default function SettingsPage() {
       type: 'expense',
     });
     setNewCatName('');
-    alert(`Category "${newCatName}" added!`);
+  };
+
+  const handlePushSync = async () => {
+    if (!supabaseUrl.trim() || !supabaseKey.trim()) {
+      setSyncFeedback({ type: 'error', text: 'Please enter both Supabase URL and Anon API Key.' });
+      return;
+    }
+    setSyncLoading(true);
+    setSyncFeedback(null);
+    try {
+      const res = await syncWithCloud(supabaseUrl.trim(), supabaseKey.trim());
+      if (res.success) {
+        setSyncFeedback({ type: 'success', text: res.message });
+      } else {
+        setSyncFeedback({ type: 'error', text: res.message });
+      }
+    } catch (err: any) {
+      setSyncFeedback({ type: 'error', text: err.message || 'Error syncing with cloud.' });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handlePullSync = async () => {
+    if (!supabaseUrl.trim() || !supabaseKey.trim()) {
+      setSyncFeedback({ type: 'error', text: 'Please enter both Supabase URL and Anon API Key.' });
+      return;
+    }
+    setSyncLoading(true);
+    setSyncFeedback(null);
+    try {
+      const res = await pullLatestFromCloud(supabaseUrl.trim(), supabaseKey.trim());
+      if (res.success) {
+        setSyncFeedback({ type: 'success', text: res.message });
+      } else {
+        setSyncFeedback({ type: 'error', text: res.message });
+      }
+    } catch (err: any) {
+      setSyncFeedback({ type: 'error', text: err.message || 'Error pulling data from cloud.' });
+    } finally {
+      setSyncLoading(false);
+    }
   };
 
   const copySqlToClipboard = () => {
-    const sql = `-- Supabase PostgreSQL Schema for RizqFlow
-CREATE TABLE IF NOT EXISTS public.funds (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    icon TEXT NOT NULL,
-    color TEXT NOT NULL,
-    allocation_percentage NUMERIC NOT NULL DEFAULT 0,
-    opening_balance NUMERIC NOT NULL DEFAULT 0,
-    monthly_budget NUMERIC,
-    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
-    "order" INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
+    const sql = `-- Supabase PostgreSQL Table for Instant Cross-Device Sync
+CREATE TABLE IF NOT EXISTS public.rizqflow_sync (
+    id TEXT PRIMARY KEY DEFAULT 'primary_sync',
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
-    amount NUMERIC NOT NULL,
-    date DATE NOT NULL,
-    title TEXT,
-    description TEXT,
-    notes TEXT,
-    fund_id TEXT REFERENCES public.funds(id),
-    from_fund_id TEXT REFERENCES public.funds(id),
-    to_fund_id TEXT REFERENCES public.funds(id),
-    category TEXT,
-    source TEXT,
-    payment_method TEXT,
-    allocation_method TEXT,
-    allocations JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+ALTER TABLE public.rizqflow_sync ENABLE ROW LEVEL SECURITY;
 
--- Enable RLS
-ALTER TABLE public.funds ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
+CREATE POLICY "Allow public sync access"
+    ON public.rizqflow_sync FOR ALL
+    USING (true)
+    WITH CHECK (true);`;
     navigator.clipboard.writeText(sql);
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 2000);
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl">
       {/* Top Header */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft">
         <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
@@ -183,7 +235,7 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
           Settings & Preferences
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Configure accounting rules, currency, budgets, categories, and data backup.
+          Configure accounting rules, currency, budgets, categories, and multi-device cloud synchronization.
         </p>
 
         {/* Tab Navigation */}
@@ -191,9 +243,9 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
           {[
             { id: 'general', label: 'General & Currency' },
             { id: 'budgets', label: 'Monthly Budgets' },
-            { id: 'categories', label: 'Categories' },
+            { id: 'categories', label: `Categories (${categories.length})` },
             { id: 'backup', label: 'Backup & Restore' },
-            { id: 'cloud', label: 'Cloud Database (Supabase)' },
+            { id: 'cloud', label: 'Cloud Sync (Supabase)' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -265,7 +317,7 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
                   Allow Negative Fund Balances (With Confirmation)
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
-                  When enabled, expenses that exceed a fund's available balance will prompt for explicit confirmation instead of being completely blocked.
+                  When enabled, expenses exceeding a fund's available balance will prompt for explicit confirmation instead of being completely blocked.
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer ml-4">
@@ -288,7 +340,7 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
           <div>
             <h3 className="text-sm font-bold text-slate-900">Monthly Spending Budgets</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Set optional monthly spending caps per fund. Budget warnings will alert you without restricting balance accounting.
+              Set optional monthly spending caps per fund. Budget warnings alert you without restricting balance accounting.
             </p>
           </div>
 
@@ -310,7 +362,7 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
                     <div>
                       <div className="font-bold text-slate-800">{fund.name}</div>
                       <div className="text-[11px] text-slate-400">
-                        Allocation: {fund.allocationPercentage}%
+                        Default Allocation: {fund.allocationPercentage}%
                       </div>
                     </div>
                   </div>
@@ -341,20 +393,74 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
         <div className="space-y-4">
           {/* Add Category Form */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">Create Custom Category</h3>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Add New Expense Category</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Customize your categories for fine-grained expense tracking.
+              </p>
+            </div>
 
-            <form onSubmit={handleAddCategorySubmit} className="flex flex-col sm:flex-row gap-3">
-              <input
-                type="text"
-                required
-                placeholder="Category Name (e.g. Halal Investments, Sadaqah)"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400"
-              />
+            <form onSubmit={handleAddCategorySubmit} className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase">
+                    Category Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Halal Investments, Sadaqah, Gym"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase">
+                    Color
+                  </label>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {PRESET_COLORS.map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setNewCatColor(col)}
+                        style={{ backgroundColor: col }}
+                        className={`w-6 h-6 rounded-full transition-all ${
+                          newCatColor === col ? 'ring-2 ring-offset-2 ring-slate-800 scale-110' : 'opacity-80 hover:opacity-100'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase">
+                  Select Icon
+                </label>
+                <div className="flex items-center gap-2 flex-wrap max-h-24 overflow-y-auto p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                  {AVAILABLE_ICONS.map((ic) => (
+                    <button
+                      key={ic}
+                      type="button"
+                      onClick={() => setNewCatIcon(ic)}
+                      className={`p-2 rounded-lg transition-all flex items-center justify-center ${
+                        newCatIcon === ic
+                          ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-500 font-bold'
+                          : 'bg-white text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <IconRenderer name={ic} className="w-4 h-4" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 type="submit"
-                className="px-4 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5"
+                className="px-4 py-2.5 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1.5"
               >
                 <Plus className="w-4 h-4" />
                 Add Category
@@ -364,20 +470,43 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
 
           {/* Existing Categories Grid */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-3">
-            <h3 className="text-sm font-bold text-slate-900">Active Categories ({categories.length})</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 pt-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">
+                Active Categories ({categories.length})
+              </h3>
+              <span className="text-[11px] text-slate-400 font-medium">
+                Click trash to remove custom categories
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-2">
               {categories.map((c) => (
                 <div
                   key={c.id}
-                  className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 flex items-center gap-2 text-xs"
+                  className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-between gap-2 text-xs group hover:bg-white hover:border-slate-200 transition-all"
                 >
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
-                    style={{ backgroundColor: c.color }}
-                  >
-                    <IconRenderer name={c.icon} className="w-3.5 h-3.5" />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
+                      style={{ backgroundColor: c.color }}
+                    >
+                      <IconRenderer name={c.icon} className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="font-semibold text-slate-800 truncate">{c.name}</span>
                   </div>
-                  <span className="font-semibold text-slate-800 truncate">{c.name}</span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Delete category "${c.name}"?`)) {
+                        deleteCategory(c.id);
+                      }
+                    }}
+                    title="Delete category"
+                    className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
             </div>
@@ -448,7 +577,7 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
                 Reset Application to Clean Defaults
               </div>
               <p className="text-[11px] text-red-700">
-                Wipes all recorded transactions and resets funds to the initial recommended 7 funds (PKR 100%).
+                Wipes recorded transactions and resets funds to the initial recommended 7 funds (PKR 100%).
               </p>
               <button
                 type="button"
@@ -469,80 +598,143 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;`;
 
       {/* TAB 5: CLOUD (SUPABASE) CONFIGURATION */}
       {activeTab === 'cloud' && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100">
             <div>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Database className="w-4 h-4 text-emerald-600" />
-                Persistent Cloud Database (PostgreSQL / Supabase)
+                <Cloud className="w-4 h-4 text-amber-500" />
+                Cross-Device Multi-Device Cloud Sync (Supabase)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Current Mode: <strong>Persistent Local Database Mode</strong> (Saved to <code>data/rizqflow-db.json</code> on server & IndexedDB/localStorage).
+                Keep your budget, funds, and transactions synchronized across your phone, tablet, and computer.
               </p>
             </div>
-            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Local Persistence Active
-            </span>
+            {settings.cloudSyncEnabled ? (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1.5 self-start sm:self-auto">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Cloud Sync Active
+              </span>
+            ) : (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 flex items-center gap-1.5 self-start sm:self-auto">
+                Offline / Local Mode
+              </span>
+            )}
           </div>
 
+          {/* Sync Form */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Supabase Project URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://your-project.supabase.co"
+                  value={supabaseUrl}
+                  onChange={(e) => setSupabaseUrl(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Supabase Anon Public API Key
+                </label>
+                <input
+                  type="password"
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  value={supabaseKey}
+                  onChange={(e) => setSupabaseKey(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Status Feedback */}
+            {syncFeedback && (
+              <div
+                className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
+                  syncFeedback.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}
+              >
+                {syncFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span>{syncFeedback.text}</span>
+              </div>
+            )}
+
+            {settings.lastSyncedAt && (
+              <p className="text-[11px] text-slate-400">
+                Last synchronized: {format(new Date(settings.lastSyncedAt), 'MMM dd, yyyy HH:mm:ss')}
+              </p>
+            )}
+
+            {/* Sync Buttons */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handlePushSync}
+                disabled={syncLoading}
+                className="px-4 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                <ArrowUpFromLine className="w-3.5 h-3.5" />
+                {syncLoading ? 'Syncing...' : 'Save & Push to Cloud'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePullSync}
+                disabled={syncLoading}
+                className="px-4 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                <ArrowDownToLine className="w-3.5 h-3.5" />
+                {syncLoading ? 'Pulling...' : 'Pull Latest from Cloud'}
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Setup Instructions & SQL Copy */}
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/70 text-xs text-slate-600 space-y-3">
-            <h4 className="font-bold text-slate-900">How to connect Supabase Cloud:</h4>
-            <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
-              <li>Create a free account at <strong>supabase.com</strong> and create a new project.</li>
-              <li>Go to the <strong>SQL Editor</strong> in Supabase and paste the schema below.</li>
-              <li>Copy your <strong>Project URL</strong> and <strong>Anon Public Key</strong>.</li>
-              <li>Add them to your <code>.env.local</code> file as <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.</li>
+            <h4 className="font-bold text-slate-900">3-Step Supabase Setup:</h4>
+            <ol className="list-decimal list-inside space-y-1.5 leading-relaxed text-slate-600">
+              <li>Create a free account at <strong>supabase.com</strong> and start a new project.</li>
+              <li>Open the <strong>SQL Editor</strong> tab in Supabase, paste the SQL below and click <strong>Run</strong>.</li>
+              <li>Go to <strong>Project Settings → API</strong>, copy your <strong>URL</strong> and <strong>anon key</strong>, and paste them above.</li>
             </ol>
 
             <div className="pt-2">
               <div className="flex items-center justify-between pb-1">
                 <span className="text-[11px] font-bold text-slate-500 uppercase">
-                  Supabase SQL Schema
+                  Supabase Setup SQL
                 </span>
                 <button
                   type="button"
                   onClick={copySqlToClipboard}
-                  className="px-2 py-1 text-[11px] font-bold bg-white border border-slate-300 rounded text-slate-700 hover:bg-slate-100 flex items-center gap-1"
+                  className="px-2 py-1 text-[11px] font-bold bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center gap-1 shadow-2xs"
                 >
                   <Copy className="w-3 h-3" />
                   {copiedSql ? 'Copied!' : 'Copy SQL'}
                 </button>
               </div>
               <pre className="p-3 bg-slate-900 text-amber-300 text-[11px] rounded-xl overflow-x-auto font-mono">
-{`-- Supabase PostgreSQL Schema for RizqFlow
-CREATE TABLE IF NOT EXISTS public.funds (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    icon TEXT NOT NULL,
-    color TEXT NOT NULL,
-    allocation_percentage NUMERIC NOT NULL DEFAULT 0,
-    opening_balance NUMERIC NOT NULL DEFAULT 0,
-    monthly_budget NUMERIC,
-    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
-    "order" INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
+{`-- Supabase PostgreSQL Table for Instant Cross-Device Sync
+CREATE TABLE IF NOT EXISTS public.rizqflow_sync (
+    id TEXT PRIMARY KEY DEFAULT 'primary_sync',
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
-    amount NUMERIC NOT NULL,
-    date DATE NOT NULL,
-    title TEXT,
-    description TEXT,
-    notes TEXT,
-    fund_id TEXT REFERENCES public.funds(id),
-    from_fund_id TEXT REFERENCES public.funds(id),
-    to_fund_id TEXT REFERENCES public.funds(id),
-    category TEXT,
-    source TEXT,
-    payment_method TEXT,
-    allocation_method TEXT,
-    allocations JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);`}
+ALTER TABLE public.rizqflow_sync ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public sync access"
+    ON public.rizqflow_sync FOR ALL
+    USING (true)
+    WITH CHECK (true);`}
               </pre>
             </div>
           </div>

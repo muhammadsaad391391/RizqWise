@@ -18,6 +18,8 @@ import {
   Wallet,
   Settings,
   Plus,
+  Edit2,
+  X,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -26,11 +28,20 @@ export default function FundDetailPage() {
   const router = useRouter();
   const fundId = params.id as string;
 
-  const { funds, transactions, settings, summary, selectedMonth, deleteTransaction } = useFinance();
+  const { funds, transactions, settings, summary, selectedMonth, deleteTransaction, updateFund } = useFinance();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer'>('expense');
 
+  // Edit Fund State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const fund = useMemo(() => funds.find((f) => f.id === fundId), [funds, fundId]);
+
+  const [editName, setEditName] = useState(fund?.name || '');
+  const [editPercent, setEditPercent] = useState(fund?.allocationPercentage?.toString() || '0');
+  const [editBudget, setEditBudget] = useState(fund?.monthlyBudget ? fund.monthlyBudget.toString() : '');
+  const [editOpeningBalance, setEditOpeningBalance] = useState(fund?.openingBalance?.toString() || '0');
+  const [editColor, setEditColor] = useState(fund?.color || '#F59E0B');
+  const [editIcon, setEditIcon] = useState(fund?.icon || 'Folder');
 
   const calc = useMemo(() => {
     return (
@@ -117,11 +128,27 @@ export default function FundDetailPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => {
+              setEditName(fund.name);
+              setEditPercent(fund.allocationPercentage.toString());
+              setEditBudget(fund.monthlyBudget ? fund.monthlyBudget.toString() : '');
+              setEditOpeningBalance(fund.openingBalance.toString());
+              setEditColor(fund.color);
+              setEditIcon(fund.icon);
+              setIsEditModalOpen(true);
+            }}
+            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            Edit Fund
+          </button>
+          <button
+            type="button"
             onClick={() => openAction('expense')}
             className="px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <ArrowDownRight className="w-3.5 h-3.5" />
-            Spend from Fund
+            Spend
           </button>
           <button
             type="button"
@@ -397,6 +424,113 @@ export default function FundDetailPage() {
           </div>
         )}
       </div>
+
+      {/* EDIT FUND MODAL */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-slate-200">
+            <div className="bg-brand-header px-5 py-4 flex items-center justify-between border-b border-brand-500/20">
+              <h3 className="font-bold text-slate-950">Edit Fund Details</h3>
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-slate-700 hover:text-slate-950"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateFund(fund.id, {
+                  name: editName.trim(),
+                  icon: editIcon,
+                  color: editColor,
+                  allocationPercentage: parseFloat(editPercent) || 0,
+                  openingBalance: parseFloat(editOpeningBalance) || 0,
+                  monthlyBudget: editBudget ? parseFloat(editBudget) : null,
+                });
+                setIsEditModalOpen(false);
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Fund Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Allocation %
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editPercent}
+                    onChange={(e) => setEditPercent(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Starting Capital ({settings.currencySymbol})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editOpeningBalance}
+                    onChange={(e) => setEditOpeningBalance(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Monthly Budget Cap ({settings.currencySymbol})
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="Optional limit"
+                  value={editBudget}
+                  onChange={(e) => setEditBudget(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-md"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <TransactionModal
         isOpen={isModalOpen}

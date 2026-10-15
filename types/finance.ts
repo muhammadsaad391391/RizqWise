@@ -84,6 +84,10 @@ export interface AppSettings {
   allowNegativeBalance: boolean;
   onboardingCompleted: boolean;
   budgetWarningThreshold: number; // e.g. 80
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+  cloudSyncEnabled?: boolean;
+  lastSyncedAt?: string;
 }
 
 export interface FundCalculations {

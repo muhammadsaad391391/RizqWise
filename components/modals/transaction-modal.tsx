@@ -7,7 +7,7 @@ import { formatCurrency, calculateAllocations, validateAllocationRules } from '@
 import { INCOME_SOURCES, PAYMENT_METHODS } from '@/lib/initial-data';
 import { FundAllocationSnapshot } from '@/types/finance';
 import { format } from 'date-fns';
-import { X, ArrowRightLeft, ArrowDownRight, ArrowUpRight, AlertTriangle, CheckCircle2, AlertCircle, PlusCircle } from 'lucide-react';
+import { X, ArrowRightLeft, ArrowDownRight, ArrowUpRight, AlertTriangle, CheckCircle2, AlertCircle, PlusCircle, Plus } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -30,9 +30,21 @@ export function TransactionModal({
     addExpense,
     addIncome,
     addTransfer,
+    addCategory,
+    updateAllocationRules,
   } = useFinance();
 
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'transfer'>(initialType);
+
+  // Inline Category Creation State
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatIcon, setNewCatIcon] = useState('Tag');
+  const [newCatColor, setNewCatColor] = useState('#F59E0B');
+
+  // Inline Allocation Adjustment State
+  const [isEditingRulesInline, setIsEditingRulesInline] = useState(false);
+  const [inlineRules, setInlineRules] = useState<Record<string, number>>({});
 
   // Common Fields
   const [amountStr, setAmountStr] = useState('');
@@ -461,9 +473,55 @@ export function TransactionModal({
 
               {/* Category Grid - Inspired by Reference Screenshot 1 */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">
-                  Select Category <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Select Category <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingCategory(!isCreatingCategory)}
+                    className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {isCreatingCategory ? 'Cancel' : 'New Category'}
+                  </button>
+                </div>
+
+                {/* Inline Category Creator */}
+                {isCreatingCategory && (
+                  <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs">
+                    <span className="font-bold text-amber-950 block">Create Custom Category</span>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Category Name (e.g. Groceries, Gym, Charity)"
+                        value={newCatName}
+                        onChange={(e) => setNewCatName(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newCatName.trim()) return;
+                          const created = addCategory({
+                            name: newCatName.trim(),
+                            icon: newCatIcon,
+                            color: newCatColor,
+                            type: 'expense',
+                          });
+                          setSelectedCategoryId(created.id);
+                          setExpenseTitle(created.name);
+                          setNewCatName('');
+                          setIsCreatingCategory(false);
+                        }}
+                        className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 font-bold text-slate-950 rounded-lg transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 max-h-48 overflow-y-auto p-1">
                   {categories.map((cat) => {
                     const isSelected = selectedCategoryId === cat.id;
@@ -496,6 +554,20 @@ export function TransactionModal({
                       </button>
                     );
                   })}
+
+                  {/* + Button at end of category grid (Reference Screenshot 1!) */}
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingCategory(!isCreatingCategory)}
+                    className="flex flex-col items-center p-2 rounded-xl border border-dashed border-slate-300 hover:border-amber-400 hover:bg-amber-50/50 transition-all text-center"
+                  >
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500 hover:text-amber-700 hover:bg-amber-100 transition-colors">
+                      <Plus className="w-5 h-5 stroke-[2.5]" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-slate-600 mt-1.5 leading-tight">
+                      + Add
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -653,16 +725,85 @@ export function TransactionModal({
                     <span className="font-semibold text-slate-700">
                       Automatic Allocation Breakdown
                     </span>
-                    <span className={`font-bold flex items-center gap-1 ${rulesValidation.isValid ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {rulesValidation.isValid ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5" /> 100% Rules Total
-                        </>
-                      ) : (
-                        `Rules: ${rulesValidation.totalPercentage}%`
-                      )}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const initial: Record<string, number> = {};
+                          activeFunds.forEach((f) => {
+                            initial[f.id] = f.allocationPercentage;
+                          });
+                          setInlineRules(initial);
+                          setIsEditingRulesInline(!isEditingRulesInline);
+                        }}
+                        className="text-[11px] font-bold text-amber-700 hover:underline"
+                      >
+                        {isEditingRulesInline ? 'Done' : '✏️ Edit %'}
+                      </button>
+                      <span className={`font-bold flex items-center gap-1 ${rulesValidation.isValid ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {rulesValidation.isValid ? (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 100%
+                          </>
+                        ) : (
+                          `${rulesValidation.totalPercentage}%`
+                        )}
+                      </span>
+                    </div>
                   </div>
+
+                  {isEditingRulesInline && (
+                    <div className="p-2.5 bg-white border border-amber-200 rounded-xl space-y-2 text-xs">
+                      <span className="font-bold text-slate-800 block text-[11px]">
+                        Adjust Default Fund Allocation Percentages (Must Total 100%):
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                        {activeFunds.map((f) => (
+                          <div key={f.id} className="flex items-center justify-between gap-1 p-1.5 bg-slate-50 rounded-lg">
+                            <span className="truncate font-medium text-[11px]">{f.name}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={inlineRules[f.id] ?? f.allocationPercentage}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setInlineRules((prev) => ({ ...prev, [f.id]: val }));
+                                }}
+                                className="w-12 px-1 py-0.5 text-center text-xs font-bold border border-slate-300 rounded bg-white"
+                              />
+                              <span className="text-[10px] text-slate-400">%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                        <span className="text-[11px] font-bold text-slate-600">
+                          Total: {Object.values(inlineRules).reduce((a, b) => a + b, 0)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const total = Object.values(inlineRules).reduce((a, b) => a + b, 0);
+                            if (total !== 100) {
+                              alert(`Total must equal 100%. Current total: ${total}%`);
+                              return;
+                            }
+                            const payload = Object.entries(inlineRules).map(([fundId, percentage]) => ({
+                              fundId,
+                              percentage,
+                            }));
+                            updateAllocationRules(payload);
+                            setIsEditingRulesInline(false);
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-md"
+                        >
+                          Save Rules
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {numAmount > 0 ? (
                     <div className="space-y-1.5 divide-y divide-slate-100 text-xs">
