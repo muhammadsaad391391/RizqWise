@@ -74,6 +74,7 @@ interface FinanceContextType {
   deleteFund: (id: string) => { success: boolean; error?: string };
   updateAllocationRules: (rules: { fundId: string; percentage: number }[]) => { success: boolean; error?: string };
   addCategory: (category: { name: string; icon: string; color: string; type: 'expense' | 'income' }) => Category;
+  updateCategory: (id: string, updated: Partial<Category>) => { success: boolean; error?: string };
   deleteCategory: (id: string) => void;
   syncWithCloud: (customUrl?: string, customKey?: string) => Promise<{ success: boolean; message: string }>;
   pullLatestFromCloud: (customUrl?: string, customKey?: string) => Promise<{ success: boolean; message: string }>;
@@ -177,14 +178,41 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Initial load: 1. Try Supabase Cloud Database (for cross-device sync)
-  //               2. Try Server API (/api/data)
-  //               3. Fallback to localStorage cache
+  // Initial load: 1. Immediately hydrate from localStorage (preserves user edits & categories on refresh)
+  //               2. Sync with Supabase Cloud Database (if configured)
+  //               3. Fallback to Server API (/api/data) only if browser storage is empty
   useEffect(() => {
     async function loadData() {
-      let loaded = false;
+      let hasLocalData = false;
 
-      // 1. Check Supabase Cloud first for multi-device sync
+      // 1. Immediately load local browser cache (fastest, prevents refresh reverts)
+      if (typeof window !== 'undefined') {
+        try {
+          const cached =
+            localStorage.getItem(LOCAL_STORAGE_KEY) ||
+            localStorage.getItem(LEGACY_STORAGE_KEY);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed.funds && Array.isArray(parsed.funds) && parsed.funds.length > 0) {
+              setFunds(parsed.funds);
+            }
+            if (parsed.transactions && Array.isArray(parsed.transactions)) {
+              setTransactions(parsed.transactions);
+            }
+            if (parsed.categories && Array.isArray(parsed.categories) && parsed.categories.length > 0) {
+              setCategories(parsed.categories);
+            }
+            if (parsed.settings) {
+              setSettings(parsed.settings);
+            }
+            hasLocalData = true;
+          }
+        } catch (e) {
+          console.error('Failed to load from localStorage cache:', e);
+        }
+      }
+
+      // 2. Check Supabase Cloud for cross-device sync
       const sbUrl =
         (typeof window !== 'undefined'
           ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
@@ -201,11 +229,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             if (cloudRes.data.funds && cloudRes.data.funds.length > 0) setFunds(cloudRes.data.funds);
             if (cloudRes.data.transactions) setTransactions(cloudRes.data.transactions);
             if (cloudRes.data.categories && cloudRes.data.categories.length > 0) {
-              const hasIncome = cloudRes.data.categories.some((c: Category) => c.type === 'income');
-              const finalCats = hasIncome
-                ? cloudRes.data.categories
-                : [...cloudRes.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
-              setCategories(finalCats);
+              setCategories(cloudRes.data.categories);
             }
             const mergedSettings = {
               ...(cloudRes.data.settings || DEFAULT_SETTINGS),
@@ -215,15 +239,29 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
               lastSyncedAt: new Date().toISOString(),
             };
             setSettings(mergedSettings);
-            loaded = true;
+
+            // Update local storage with cloud data
+            if (typeof window !== 'undefined') {
+              const serialized = JSON.stringify({
+                funds: cloudRes.data.funds || DEFAULT_FUNDS,
+                transactions: cloudRes.data.transactions || [],
+                categories: cloudRes.data.categories || DEFAULT_CATEGORIES,
+                settings: mergedSettings,
+              });
+              localStorage.setItem(LOCAL_STORAGE_KEY, serialized);
+              localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
+            }
+            hasLocalData = true;
           } else if (cloudRes.success && !cloudRes.data) {
-            // Table exists in Supabase but is empty! Automatically seed and push initial state!
+            // First time setup on Supabase: push current local state up to cloud
+            const currentCache = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_KEY) : null;
+            const parsed = currentCache ? JSON.parse(currentCache) : null;
             const initialPayload = {
-              funds: DEFAULT_FUNDS,
-              transactions: [],
-              categories: DEFAULT_CATEGORIES,
+              funds: parsed?.funds || DEFAULT_FUNDS,
+              transactions: parsed?.transactions || [],
+              categories: parsed?.categories || DEFAULT_CATEGORIES,
               settings: {
-                ...DEFAULT_SETTINGS,
+                ...(parsed?.settings || DEFAULT_SETTINGS),
                 cloudSyncEnabled: true,
                 supabaseUrl: sbUrl,
                 supabaseAnonKey: sbKey,
@@ -232,15 +270,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             };
             await pushToSupabase(initialPayload, sbUrl, sbKey);
             setSettings(initialPayload.settings);
-            loaded = true;
+            hasLocalData = true;
           }
         } catch (cloudErr) {
-          console.warn('Supabase cloud fetch failed, falling back to local...', cloudErr);
+          console.warn('Supabase cloud fetch failed, continuing with local state...', cloudErr);
         }
       }
 
-      // 2. Fallback to server API
-      if (!loaded) {
+      // 3. Fallback to server API ONLY if browser storage was empty (fresh visit)
+      if (!hasLocalData) {
         try {
           const res = await fetch('/api/data');
           if (res.ok) {
@@ -249,42 +287,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
               if (json.data.funds && json.data.funds.length > 0) setFunds(json.data.funds);
               if (json.data.transactions) setTransactions(json.data.transactions);
               if (json.data.categories && json.data.categories.length > 0) {
-                const hasIncome = json.data.categories.some((c: Category) => c.type === 'income');
-                const finalCats = hasIncome
-                  ? json.data.categories
-                  : [...json.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
-                setCategories(finalCats);
+                setCategories(json.data.categories);
               }
               if (json.data.settings) setSettings(json.data.settings);
-              loaded = true;
             }
           }
         } catch (err) {
-          console.warn('Backend fetch failed, checking localStorage fallback...', err);
-        }
-      }
-
-      // 3. Fallback to localStorage
-      if (!loaded && typeof window !== 'undefined') {
-        try {
-          const cached =
-            localStorage.getItem(LOCAL_STORAGE_KEY) ||
-            localStorage.getItem(LEGACY_STORAGE_KEY);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed.funds) setFunds(parsed.funds);
-            if (parsed.transactions) setTransactions(parsed.transactions);
-            if (parsed.categories) {
-              const hasIncome = parsed.categories.some((c: Category) => c.type === 'income');
-              const finalCats = hasIncome
-                ? parsed.categories
-                : [...parsed.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
-              setCategories(finalCats);
-            }
-            if (parsed.settings) setSettings(parsed.settings);
-          }
-        } catch (e) {
-          console.error('Failed to load from localStorage cache:', e);
+          console.warn('Backend fetch failed, using defaults...', err);
         }
       }
 
@@ -312,6 +321,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             if (cloudRes.data.transactions) setTransactions(cloudRes.data.transactions);
             if (cloudRes.data.categories) setCategories(cloudRes.data.categories);
             if (cloudRes.data.settings) setSettings(cloudRes.data.settings);
+            if (typeof window !== 'undefined') {
+              const serialized = JSON.stringify({
+                funds: cloudRes.data.funds,
+                transactions: cloudRes.data.transactions,
+                categories: cloudRes.data.categories,
+                settings: cloudRes.data.settings,
+              });
+              localStorage.setItem(LOCAL_STORAGE_KEY, serialized);
+              localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
+            }
           }
         }
       }
@@ -344,6 +363,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
                 if (remote.transactions) setTransactions(remote.transactions);
                 if (remote.categories) setCategories(remote.categories);
                 if (remote.settings) setSettings(remote.settings);
+                if (typeof window !== 'undefined') {
+                  const serialized = JSON.stringify({
+                    funds: remote.funds,
+                    transactions: remote.transactions,
+                    categories: remote.categories,
+                    settings: remote.settings,
+                  });
+                  localStorage.setItem(LOCAL_STORAGE_KEY, serialized);
+                  localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
+                }
               }
             }
           )
@@ -793,6 +822,44 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [categories, funds, transactions, settings, persistState]
   );
 
+  // Update Category
+  const updateCategory = useCallback(
+    (id: string, updated: Partial<Category>) => {
+      const existing = categories.find((c) => c.id === id);
+      if (!existing) return { success: false, error: 'Category not found' };
+
+      const nextCategories = categories.map((c) => {
+        if (c.id === id) {
+          return {
+            ...c,
+            ...updated,
+            name: updated.name !== undefined ? updated.name.trim() : c.name,
+          };
+        }
+        return c;
+      });
+
+      // If category name was renamed, update linked transactions so history stays consistent
+      let nextTransactions = transactions;
+      if (updated.name && updated.name.trim() !== existing.name) {
+        const oldName = existing.name;
+        const newName = updated.name.trim();
+        nextTransactions = transactions.map((t) => {
+          if ('category' in t && (t as any).category === oldName) {
+            return { ...(t as any), category: newName };
+          }
+          return t;
+        });
+        setTransactions(nextTransactions);
+      }
+
+      setCategories(nextCategories);
+      persistState(funds, nextTransactions, nextCategories, settings);
+      return { success: true };
+    },
+    [categories, transactions, funds, settings, persistState]
+  );
+
   // Sync with Cloud Database
   const syncWithCloud = useCallback(
     async (customUrl?: string, customKey?: string) => {
@@ -1041,6 +1108,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         deleteFund,
         updateAllocationRules,
         addCategory,
+        updateCategory,
         deleteCategory,
         syncWithCloud,
         pullLatestFromCloud,

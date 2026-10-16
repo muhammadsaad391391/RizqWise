@@ -30,6 +30,8 @@ import {
   Eye,
   EyeOff,
   ShieldCheck,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -63,6 +65,7 @@ export default function SettingsPage() {
     updateSettings,
     updateFund,
     addCategory,
+    updateCategory,
     deleteCategory,
     importData,
     resetToDefaults,
@@ -86,12 +89,19 @@ export default function SettingsPage() {
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [securityFeedback, setSecurityFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Category form state
+  // Category form state (Add)
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('Tag');
   const [newCatColor, setNewCatColor] = useState('#F59E0B');
   const [categoryType, setCategoryType] = useState<'expense' | 'income'>('expense');
   const [selectedCatFilter, setSelectedCatFilter] = useState<'all' | 'expense' | 'income'>('expense');
+
+  // Category Edit state
+  const [editingCategory, setEditingCategory] = useState<any | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [editCatIcon, setEditCatIcon] = useState('Tag');
+  const [editCatColor, setEditCatColor] = useState('#F59E0B');
+  const [editCatType, setEditCatType] = useState<'expense' | 'income'>('expense');
 
   // Supabase cloud credentials state
   const [supabaseUrl, setSupabaseUrl] = useState('');
@@ -192,6 +202,26 @@ export default function SettingsPage() {
       type: categoryType,
     });
     setNewCatName('');
+  };
+
+  const handleStartEditCategory = (cat: any) => {
+    setEditingCategory(cat);
+    setEditCatName(cat.name);
+    setEditCatIcon(cat.icon || 'Tag');
+    setEditCatColor(cat.color || '#F59E0B');
+    setEditCatType(cat.type || 'expense');
+  };
+
+  const handleSaveEditCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCategory || !editCatName.trim()) return;
+    updateCategory(editingCategory.id, {
+      name: editCatName.trim(),
+      icon: editCatIcon,
+      color: editCatColor,
+      type: editCatType,
+    });
+    setEditingCategory(null);
   };
 
   const handlePushSync = async () => {
@@ -883,18 +913,29 @@ CREATE POLICY "Allow public sync access"
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm(`Delete category "${c.name}"?`)) {
-                          deleteCategory(c.id);
-                        }
-                      }}
-                      title="Delete category"
-                      className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditCategory(c)}
+                        title="Edit category"
+                        className="text-slate-400 hover:text-amber-600 p-1 rounded transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Delete category "${c.name}"?`)) {
+                            deleteCategory(c.id);
+                          }
+                        }}
+                        title="Delete category"
+                        className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
             </div>
@@ -1138,6 +1179,148 @@ CREATE POLICY "Allow public sync access"
     WITH CHECK (true);`}
               </pre>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Edit Modal */}
+      {editingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs"
+                  style={{ backgroundColor: editCatColor }}
+                >
+                  <IconRenderer name={editCatIcon} className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Edit Category</h3>
+                  <p className="text-xs text-slate-400">Update name, color, and icon</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCategory(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditCategory} className="space-y-4">
+              {/* Type Switcher */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase">
+                  Category Type
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditCatType('expense')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                      editCatType === 'expense'
+                        ? 'bg-amber-400 text-slate-950 shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Expense Category
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditCatType('income')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                      editCatType === 'income'
+                        ? 'bg-emerald-500 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Income Category
+                  </button>
+                </div>
+              </div>
+
+              {/* Name */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase">
+                  Category Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCatName}
+                  onChange={(e) => setEditCatName(e.target.value)}
+                  placeholder="e.g. Groceries, Gym, Dining"
+                  className="w-full px-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+
+              {/* Colors */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase">
+                  Color Accent
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {PRESET_COLORS.map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setEditCatColor(col)}
+                      style={{ backgroundColor: col }}
+                      className={`w-7 h-7 rounded-full transition-all ${
+                        editCatColor === col
+                          ? 'ring-2 ring-offset-2 ring-slate-800 scale-110 shadow-xs'
+                          : 'opacity-80 hover:opacity-100'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Icon Selector */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase">
+                  Icon
+                </label>
+                <div className="flex items-center gap-2 flex-wrap max-h-32 overflow-y-auto p-2 bg-slate-50 border border-slate-100 rounded-xl">
+                  {AVAILABLE_ICONS.map((ic) => (
+                    <button
+                      key={ic}
+                      type="button"
+                      onClick={() => setEditCatIcon(ic)}
+                      className={`p-2 rounded-lg transition-all flex items-center justify-center ${
+                        editCatIcon === ic
+                          ? editCatType === 'income'
+                            ? 'bg-emerald-500 text-white ring-2 ring-emerald-600'
+                            : 'bg-brand-header text-slate-950 ring-2 ring-amber-500'
+                          : 'bg-white text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <IconRenderer name={ic} className="w-4 h-4" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingCategory(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-black bg-brand-header hover:bg-amber-400 text-slate-950 rounded-xl shadow-md shadow-amber-400/20 transition-all flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Category</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
