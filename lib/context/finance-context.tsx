@@ -671,6 +671,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         updatedAt: new Date().toISOString(),
       } as Transaction;
 
+      // If income with automatic allocation and allocations weren't explicitly provided, recalculate based on active funds
+      if (merged.type === 'income') {
+        const inc = merged as IncomeTransaction;
+        if (inc.allocationMethod === 'automatic' && !(updated as any).allocations) {
+          const activeFunds = funds.filter((f) => !f.isArchived);
+          inc.allocations = calculateAllocations(inc.amount, activeFunds);
+        }
+      }
+
       const nextTransactions = [...transactions];
       nextTransactions[idx] = merged;
       setTransactions(nextTransactions);

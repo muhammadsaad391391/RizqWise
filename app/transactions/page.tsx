@@ -43,6 +43,7 @@ export default function TransactionsPage() {
   // Modal & View Detail state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   // Active Funds
   const activeFunds = useMemo(() => funds.filter((f) => !f.isArchived), [funds]);
@@ -281,7 +282,10 @@ export default function TransactionsPage() {
           </button>
           <button
             type="button"
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              setEditingTx(null);
+              setIsModalOpen(true);
+            }}
             className="px-4 py-2 text-xs font-bold rounded-xl bg-brand-header hover:bg-amber-400 text-slate-950 transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -566,6 +570,17 @@ export default function TransactionsPage() {
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         type="button"
+                        onClick={() => {
+                          setEditingTx(tx);
+                          setIsModalOpen(true);
+                        }}
+                        title="Edit transaction"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-700 hover:bg-amber-50 transition-colors"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setSelectedTxForDetail(tx)}
                         title="View details"
                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
@@ -693,7 +708,7 @@ export default function TransactionsPage() {
                 </div>
               )}
 
-              <div className="pt-2 flex justify-between">
+              <div className="pt-2 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => {
@@ -706,13 +721,28 @@ export default function TransactionsPage() {
                 >
                   Delete Record
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTxForDetail(null)}
-                  className="px-4 py-1.5 text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedTxForDetail;
+                      setSelectedTxForDetail(null);
+                      setEditingTx(target);
+                      setIsModalOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Edit Transaction
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTxForDetail(null)}
+                    className="px-4 py-1.5 text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -722,7 +752,11 @@ export default function TransactionsPage() {
       {/* Global Transaction Modal */}
       <TransactionModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTx(null);
+        }}
+        transactionToEdit={editingTx}
       />
     </div>
   );

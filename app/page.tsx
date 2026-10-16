@@ -7,7 +7,7 @@ import { formatCurrency } from '@/lib/finance-engine';
 import { IconRenderer } from '@/components/common/icon-renderer';
 import { TransactionModal } from '@/components/modals/transaction-modal';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
-import { IncomeTransaction, ExpenseTransaction, TransferTransaction } from '@/types/finance';
+import { Transaction, IncomeTransaction, ExpenseTransaction, TransferTransaction } from '@/types/finance';
 import {
   Wallet,
   ArrowRightLeft,
@@ -38,12 +38,14 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [dashboardTab, setDashboardTab] = useState<'ledger' | 'charts'>('ledger');
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   const openModal = (type: 'expense' | 'income' | 'transfer') => {
+    setEditingTx(null);
     setModalType(type);
     setIsModalOpen(true);
   };
@@ -421,13 +423,29 @@ export default function DashboardPage() {
                                   {isTransfer && '⇄ '}
                                   {formatCurrency(tx.amount, settings)}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => deleteTransaction(tx.id)}
-                                  className="text-[10px] text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  Delete
-                                </button>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingTx(tx);
+                                      setIsModalOpen(true);
+                                    }}
+                                    className="text-[10px] font-bold text-amber-700 hover:text-amber-900 transition-colors"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm('Delete this transaction? All associated fund balances will be reversed.')) {
+                                        deleteTransaction(tx.id);
+                                      }
+                                    }}
+                                    className="text-[10px] font-bold text-red-500 hover:text-red-700 transition-colors"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           );
@@ -508,8 +526,12 @@ export default function DashboardPage() {
       {/* Global Transaction Modal */}
       <TransactionModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTx(null);
+        }}
         initialType={modalType}
+        transactionToEdit={editingTx}
       />
     </div>
   );

@@ -5,15 +5,22 @@ import { useFinance } from '@/lib/context/finance-context';
 import { IconRenderer } from '@/components/common/icon-renderer';
 import { formatCurrency, calculateAllocations, validateAllocationRules } from '@/lib/finance-engine';
 import { INCOME_SOURCES, PAYMENT_METHODS } from '@/lib/initial-data';
-import { FundAllocationSnapshot } from '@/types/finance';
+import {
+  FundAllocationSnapshot,
+  Transaction,
+  IncomeTransaction,
+  ExpenseTransaction,
+  TransferTransaction,
+} from '@/types/finance';
 import { format } from 'date-fns';
-import { X, ArrowRightLeft, ArrowDownRight, ArrowUpRight, AlertTriangle, CheckCircle2, AlertCircle, PlusCircle, Plus } from 'lucide-react';
+import { X, ArrowRightLeft, ArrowDownRight, ArrowUpRight, AlertTriangle, CheckCircle2, AlertCircle, PlusCircle, Plus, Edit2 } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialType?: 'expense' | 'income' | 'transfer';
   initialFundId?: string;
+  transactionToEdit?: Transaction | null;
 }
 
 export function TransactionModal({
@@ -21,6 +28,7 @@ export function TransactionModal({
   onClose,
   initialType = 'expense',
   initialFundId,
+  transactionToEdit = null,
 }: TransactionModalProps) {
   const {
     funds,
@@ -30,6 +38,7 @@ export function TransactionModal({
     addExpense,
     addIncome,
     addTransfer,
+    updateTransaction,
     addCategory,
     updateAllocationRules,
   } = useFinance();
@@ -78,44 +87,86 @@ export function TransactionModal({
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
-  // Reset or preset fields on open
+  // Reset or preset fields on open or when editing a transaction
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialType);
-      setAmountStr('');
-      setDate(format(new Date(), 'yyyy-MM-dd'));
-      setDescription('');
-      setNotes('');
-      setExpenseTitle('');
-      setErrorMsg(null);
-      setWarningMsg(null);
-      setNeedsConfirmation(false);
-      setForceNegative(false);
+      if (transactionToEdit) {
+        setActiveTab(transactionToEdit.type);
+        setAmountStr(transactionToEdit.amount.toString());
+        setDate(transactionToEdit.date || format(new Date(), 'yyyy-MM-dd'));
+        setDescription(transactionToEdit.description || '');
+        setNotes(transactionToEdit.notes || '');
+        setErrorMsg(null);
+        setWarningMsg(null);
+        setNeedsConfirmation(false);
+        setForceNegative(false);
 
-      const activeFunds = funds.filter((f) => !f.isArchived);
-      if (initialFundId) {
-        setSelectedFundId(initialFundId);
-        setFromFundId(initialFundId);
-      } else if (activeFunds.length > 0) {
-        setSelectedFundId(activeFunds[0].id);
-        setFromFundId(activeFunds[0].id);
-      }
+        if (transactionToEdit.type === 'expense') {
+          const exp = transactionToEdit as ExpenseTransaction;
+          setExpenseTitle(exp.title || '');
+          setSelectedFundId(exp.fundId || '');
+          setPaymentMethod(exp.paymentMethod || 'Cash');
+          const cat = categories.find(
+            (c) => c.name.toLowerCase() === exp.category.toLowerCase()
+          );
+          if (cat) {
+            setSelectedCategoryId(cat.id);
+          } else if (categories.length > 0) {
+            setSelectedCategoryId(categories[0].id);
+          }
+        } else if (transactionToEdit.type === 'income') {
+          const inc = transactionToEdit as IncomeTransaction;
+          setIncomeSource(inc.source || 'Salary');
+          setAllocationMethod(inc.allocationMethod || 'automatic');
+          if (inc.allocationMethod === 'manual' && inc.allocations) {
+            const manualMap: Record<string, number> = {};
+            inc.allocations.forEach((a) => {
+              manualMap[a.fundId] = a.amount;
+            });
+            setManualAllocations(manualMap);
+          }
+        } else if (transactionToEdit.type === 'transfer') {
+          const trf = transactionToEdit as TransferTransaction;
+          setFromFundId(trf.fromFundId || '');
+          setToFundId(trf.toFundId || '');
+        }
+      } else {
+        setActiveTab(initialType);
+        setAmountStr('');
+        setDate(format(new Date(), 'yyyy-MM-dd'));
+        setDescription('');
+        setNotes('');
+        setExpenseTitle('');
+        setErrorMsg(null);
+        setWarningMsg(null);
+        setNeedsConfirmation(false);
+        setForceNegative(false);
 
-      if (activeFunds.length > 1) {
-        setToFundId(activeFunds[1].id);
-      }
+        const activeFunds = funds.filter((f) => !f.isArchived);
+        if (initialFundId) {
+          setSelectedFundId(initialFundId);
+          setFromFundId(initialFundId);
+        } else if (activeFunds.length > 0) {
+          setSelectedFundId(activeFunds[0].id);
+          setFromFundId(activeFunds[0].id);
+        }
 
-      const expCats = categories.filter((c) => c.type === 'expense' || !c.type);
-      if (expCats.length > 0) {
-        setSelectedCategoryId(expCats[0].id);
-        setExpenseTitle(expCats[0].name);
-      }
-      const incCats = categories.filter((c) => c.type === 'income');
-      if (incCats.length > 0) {
-        setIncomeSource(incCats[0].name);
+        if (activeFunds.length > 1) {
+          setToFundId(activeFunds[1].id);
+        }
+
+        const expCats = categories.filter((c) => c.type === 'expense' || !c.type);
+        if (expCats.length > 0) {
+          setSelectedCategoryId(expCats[0].id);
+          setExpenseTitle(expCats[0].name);
+        }
+        const incCats = categories.filter((c) => c.type === 'income');
+        if (incCats.length > 0) {
+          setIncomeSource(incCats[0].name);
+        }
       }
     }
-  }, [isOpen, initialType, initialFundId, funds, categories]);
+  }, [isOpen, transactionToEdit, initialType, initialFundId, funds, categories]);
 
   const activeFunds = useMemo(() => funds.filter((f) => !f.isArchived), [funds]);
   const expenseCategories = useMemo(
@@ -215,6 +266,86 @@ export function TransactionModal({
       return;
     }
 
+    // UPDATE EXISTING TRANSACTION FLOW
+    if (transactionToEdit) {
+      if (activeTab === 'expense') {
+        const cat = categories.find((c) => c.id === selectedCategoryId);
+        const res = updateTransaction(transactionToEdit.id, {
+          amount: numAmount,
+          title: expenseTitle || cat?.name || 'Expense',
+          date,
+          fundId: selectedFundId,
+          category: cat?.name || 'Other',
+          description,
+          notes,
+          paymentMethod,
+        });
+
+        if (!res.success) {
+          setErrorMsg(res.error || 'Failed to update expense.');
+          return;
+        }
+
+        onClose();
+        return;
+      } else if (activeTab === 'income') {
+        let customList: FundAllocationSnapshot[] | undefined = undefined;
+
+        if (allocationMethod === 'manual') {
+          customList = activeFunds.map((f) => ({
+            fundId: f.id,
+            fundName: f.name,
+            percentage: f.allocationPercentage,
+            amount: Number(manualAllocations[f.id]) || 0,
+          }));
+        } else if (allocationMethod === 'automatic') {
+          customList = calculateAllocations(numAmount, activeFunds);
+        } else {
+          customList = [];
+        }
+
+        const res = updateTransaction(transactionToEdit.id, {
+          amount: numAmount,
+          source: incomeSource,
+          date,
+          description: description || `Income: ${incomeSource}`,
+          notes,
+          allocationMethod,
+          allocations: customList,
+        });
+
+        if (!res.success) {
+          setErrorMsg(res.error || 'Failed to update income.');
+          return;
+        }
+
+        onClose();
+        return;
+      } else if (activeTab === 'transfer') {
+        const fromFund = funds.find((f) => f.id === fromFundId);
+        const toFund = funds.find((f) => f.id === toFundId);
+
+        const res = updateTransaction(transactionToEdit.id, {
+          amount: numAmount,
+          fromFundId,
+          toFundId,
+          date,
+          title: `Transfer: ${fromFund?.name} → ${toFund?.name}`,
+          description,
+          notes,
+        });
+
+        if (!res.success) {
+          setErrorMsg(res.error || 'Failed to update transfer.');
+          return;
+        }
+
+        onClose();
+        return;
+      }
+    }
+
+    // CREATE NEW TRANSACTION FLOW
     if (activeTab === 'expense') {
       const cat = categories.find((c) => c.id === selectedCategoryId);
       const res = addExpense({
@@ -310,11 +441,26 @@ export function TransactionModal({
             >
               Cancel
             </button>
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-              {activeTab === 'expense' && 'Add Expense'}
-              {activeTab === 'income' && 'Add Income'}
-              {activeTab === 'transfer' && 'Transfer Funds'}
-            </h2>
+            <div className="flex items-center gap-2">
+              {transactionToEdit && (
+                <div className="w-6 h-6 rounded-md bg-amber-400 text-slate-900 flex items-center justify-center shadow-xs">
+                  <Edit2 className="w-3.5 h-3.5" />
+                </div>
+              )}
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                {transactionToEdit
+                  ? activeTab === 'expense'
+                    ? 'Edit Expense'
+                    : activeTab === 'income'
+                    ? 'Edit Income'
+                    : 'Edit Transfer'
+                  : activeTab === 'expense'
+                  ? 'Add Expense'
+                  : activeTab === 'income'
+                  ? 'Add Income'
+                  : 'Transfer Funds'}
+              </h2>
+            </div>
             <div className="w-12 text-right">
               <span className="text-xs font-semibold px-2 py-0.5 rounded bg-black/10 text-slate-900">
                 {settings.currency}
@@ -323,56 +469,65 @@ export function TransactionModal({
           </div>
 
           {/* Segmented Tab Control (Exact style from reference screenshot) */}
-          <div className="grid grid-cols-3 gap-1 bg-amber-200/60 p-1 rounded-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('expense');
-                setErrorMsg(null);
-                setWarningMsg(null);
-              }}
-              className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'expense'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-amber-950 hover:bg-amber-300/50'
-              }`}
-            >
-              <ArrowDownRight className="w-4 h-4" />
-              Expense
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('income');
-                setErrorMsg(null);
-                setWarningMsg(null);
-              }}
-              className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'income'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-amber-950 hover:bg-amber-300/50'
-              }`}
-            >
-              <ArrowUpRight className="w-4 h-4" />
-              Income
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('transfer');
-                setErrorMsg(null);
-                setWarningMsg(null);
-              }}
-              className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'transfer'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-amber-950 hover:bg-amber-300/50'
-              }`}
-            >
-              <ArrowRightLeft className="w-4 h-4" />
-              Transfer
-            </button>
-          </div>
+          {!transactionToEdit ? (
+            <div className="grid grid-cols-3 gap-1 bg-amber-200/60 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('expense');
+                  setErrorMsg(null);
+                  setWarningMsg(null);
+                }}
+                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  activeTab === 'expense'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-amber-950 hover:bg-amber-300/50'
+                }`}
+              >
+                <ArrowDownRight className="w-4 h-4" />
+                Expense
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('income');
+                  setErrorMsg(null);
+                  setWarningMsg(null);
+                }}
+                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  activeTab === 'income'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-amber-950 hover:bg-amber-300/50'
+                }`}
+              >
+                <ArrowUpRight className="w-4 h-4" />
+                Income
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('transfer');
+                  setErrorMsg(null);
+                  setWarningMsg(null);
+                }}
+                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  activeTab === 'transfer'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-amber-950 hover:bg-amber-300/50'
+                }`}
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                Transfer
+              </button>
+            </div>
+          ) : (
+            <div className="px-3 py-1.5 rounded-xl bg-amber-200/80 text-amber-950 text-xs font-semibold flex items-center justify-between">
+              <span>Editing existing record</span>
+              <span className="font-bold uppercase tracking-wider text-[10px] bg-white/80 px-2 py-0.5 rounded-md shadow-xs">
+                {transactionToEdit.type}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Modal Form Body */}
@@ -1057,7 +1212,13 @@ export function TransactionModal({
               disabled={needsConfirmation && !forceNegative}
               className="px-6 py-2.5 text-sm font-bold bg-amber-400 text-slate-900 hover:bg-amber-500 rounded-xl shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save Transaction
+              {transactionToEdit
+                ? activeTab === 'expense'
+                  ? 'Update Expense'
+                  : activeTab === 'income'
+                  ? 'Update Income'
+                  : 'Update Transfer'
+                : 'Save Transaction'}
             </button>
           </div>
         </form>

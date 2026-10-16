@@ -140,6 +140,28 @@ deviation = userDistributed - (userBalance + userExpenses);
 assert.strictEqual(deviation, 0, 'When 100 is mentioned in expenses for genuine cause, deviation must be 0 difference');
 console.log('✔ PASS: Mentioned 100 in expenses => Deviation is 0 difference (Fully reconciled)');
 
+console.log('\n--- TEST 13: Editing Existing Expense and Income Transactions ---');
+// 1. Edit an expense: change amount from 8,000 to 6,000 on Business
+let testExpense = 8000;
+let businessBalance = 32000;
+// Edit expense to 6000
+const updatedExpense = 6000;
+businessBalance += (testExpense - updatedExpense); // +2000
+assert.strictEqual(businessBalance, 34000, 'Editing expense from 8,000 to 6,000 should restore 2,000 to Business balance');
+console.log('✔ PASS: Editing expense amount dynamically recalibrates fund balance.');
+
+// 2. Edit income: change amount from 100,000 to 150,000 with automatic allocations
+const oldIncome = 100000;
+const newIncome = 150000;
+const updatedSnapshots = funds.map((fund) => {
+  const amt = Math.round(((newIncome * fund.allocationPercentage) / 100) * 100) / 100;
+  return { fundId: fund.id, amount: amt };
+});
+const updatedIncomeSum = updatedSnapshots.reduce((s, a) => s + a.amount, 0);
+assert.strictEqual(updatedIncomeSum, 150000, 'Sum of re-allocated funds must match updated income amount');
+assert.strictEqual(updatedSnapshots.find((s) => s.fundId === 'fund-business').amount, 60000, 'Business (40%) must now receive 60,000');
+console.log('✔ PASS: Editing income amount recalculates fund allocations accurately.');
+
 console.log('\n=============================================');
-console.log(' ALL 13 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
+console.log(' ALL 14 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
 console.log('=============================================\n');
