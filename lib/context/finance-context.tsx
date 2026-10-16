@@ -82,6 +82,12 @@ interface FinanceContextType {
   resetToDefaults: () => void;
   getFundById: (id: string) => Fund | undefined;
   getFundBalance: (id: string) => number;
+  isUnlocked: boolean;
+  isPasswordRequired: boolean;
+  unlockWithPassword: (password: string, rememberDevice?: boolean) => { success: boolean; error?: string };
+  lockAccount: () => void;
+  setPassword: (password: string) => void;
+  removePassword: () => void;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -927,6 +933,93 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     persistState(DEFAULT_FUNDS, [], DEFAULT_CATEGORIES, DEFAULT_SETTINGS);
   }, [persistState]);
 
+  // --- Account Lock & Passcode Management ---
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(true);
+
+  // Password protection is active if enabled in settings and a non-empty password is set
+  const isPasswordRequired = useMemo(() => {
+    return Boolean(settings.isPasswordProtected && settings.appPassword && settings.appPassword.trim().length > 0);
+  }, [settings.isPasswordProtected, settings.appPassword]);
+
+  // Synchronize lock state based on session and remembered tokens
+  useEffect(() => {
+    if (!isPasswordRequired) {
+      setIsUnlocked(true);
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      const sessionUnlocked = sessionStorage.getItem('rizqwise_session_unlocked') === 'true';
+      const storedToken = localStorage.getItem('rizqwise_device_unlocked_token');
+      const expectedToken = settings.appPassword ? btoa(encodeURIComponent(settings.appPassword)) : '';
+      if (sessionUnlocked || (storedToken && storedToken === expectedToken)) {
+        setIsUnlocked(true);
+      } else {
+        setIsUnlocked(false);
+      }
+    }
+  }, [isPasswordRequired, settings.appPassword]);
+
+  const unlockWithPassword = useCallback(
+    (password: string, rememberDevice = false) => {
+      if (!settings.appPassword || password === settings.appPassword) {
+        setIsUnlocked(true);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('rizqwise_session_unlocked', 'true');
+          if (rememberDevice && settings.appPassword) {
+            localStorage.setItem('rizqwise_device_unlocked_token', btoa(encodeURIComponent(settings.appPassword)));
+          } else {
+            localStorage.removeItem('rizqwise_device_unlocked_token');
+          }
+        }
+        return { success: true };
+      }
+      return { success: false, error: 'Incorrect password. Please try again.' };
+    },
+    [settings.appPassword]
+  );
+
+  const lockAccount = useCallback(() => {
+    setIsUnlocked(false);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('rizqwise_session_unlocked');
+      localStorage.removeItem('rizqwise_device_unlocked_token');
+    }
+  }, []);
+
+  const setPassword = useCallback(
+    (newPassword: string) => {
+      const updated = {
+        ...settings,
+        isPasswordProtected: true,
+        appPassword: newPassword,
+      };
+      setSettings(updated);
+      persistState(funds, transactions, categories, updated);
+      setIsUnlocked(true);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('rizqwise_session_unlocked', 'true');
+        localStorage.setItem('rizqwise_device_unlocked_token', btoa(encodeURIComponent(newPassword)));
+      }
+    },
+    [settings, funds, transactions, categories, persistState]
+  );
+
+  const removePassword = useCallback(() => {
+    const updated = {
+      ...settings,
+      isPasswordProtected: false,
+      appPassword: '',
+    };
+    setSettings(updated);
+    persistState(funds, transactions, categories, updated);
+    setIsUnlocked(true);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('rizqwise_session_unlocked');
+      localStorage.removeItem('rizqwise_device_unlocked_token');
+    }
+  }, [settings, funds, transactions, categories, persistState]);
+
   return (
     <FinanceContext.Provider
       value={{
@@ -956,6 +1049,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         resetToDefaults,
         getFundById,
         getFundBalance,
+        isUnlocked,
+        isPasswordRequired,
+        unlockWithPassword,
+        lockAccount,
+        setPassword,
+        removePassword,
       }}
     >
       {children}

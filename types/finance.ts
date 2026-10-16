@@ -88,6 +88,10 @@ export interface AppSettings {
   supabaseAnonKey?: string;
   cloudSyncEnabled?: boolean;
   lastSyncedAt?: string;
+  // Security & Password Lock
+  isPasswordProtected?: boolean;
+  appPassword?: string;
+  autoLockMinutes?: number;
 }
 
 export interface FundCalculations {

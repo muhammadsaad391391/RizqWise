@@ -24,6 +24,12 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
+  Lock,
+  Unlock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  ShieldCheck,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -62,10 +68,23 @@ export default function SettingsPage() {
     resetToDefaults,
     syncWithCloud,
     pullLatestFromCloud,
+    isPasswordRequired,
+    setPassword,
+    removePassword,
+    lockAccount,
   } = useFinance();
 
-  const [activeTab, setActiveTab] = useState<'general' | 'budgets' | 'categories' | 'backup' | 'cloud'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'security' | 'budgets' | 'categories' | 'backup' | 'cloud'>('general');
   const [copiedSql, setCopiedSql] = useState(false);
+
+  // Security & Passcode state
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [securityFeedback, setSecurityFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Category form state
   const [newCatName, setNewCatName] = useState('');
@@ -217,6 +236,59 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSetOrUpdatePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSecurityFeedback(null);
+
+    // If already protected, check current password
+    if (isPasswordRequired && settings.appPassword) {
+      if (currentPasswordInput !== settings.appPassword) {
+        setSecurityFeedback({ type: 'error', text: 'Current password is incorrect. Please try again.' });
+        return;
+      }
+    }
+
+    if (!newPasswordInput || newPasswordInput.trim().length < 4) {
+      setSecurityFeedback({ type: 'error', text: 'Password must be at least 4 characters or digits.' });
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setSecurityFeedback({ type: 'error', text: 'New passwords do not match. Please verify.' });
+      return;
+    }
+
+    setPassword(newPasswordInput.trim());
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setSecurityFeedback({
+      type: 'success',
+      text: 'Account password successfully saved! Your finances are now locked behind this password.',
+    });
+  };
+
+  const handleRemovePassword = () => {
+    setSecurityFeedback(null);
+    if (isPasswordRequired && settings.appPassword) {
+      if (currentPasswordInput !== settings.appPassword) {
+        setSecurityFeedback({
+          type: 'error',
+          text: 'Please enter your current password above to confirm removing password protection.',
+        });
+        return;
+      }
+    }
+    removePassword();
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setSecurityFeedback({
+      type: 'success',
+      text: 'Password protection removed. Your account can now be opened freely.',
+    });
+  };
+
   const copySqlToClipboard = () => {
     const sql = `-- Supabase PostgreSQL Table for Instant Cross-Device Sync
 CREATE TABLE IF NOT EXISTS public.rizqwise_sync (
@@ -252,6 +324,7 @@ CREATE POLICY "Allow public sync access"
         <div className="flex flex-wrap gap-1.5 mt-4 pt-3 border-t border-slate-100 text-xs font-bold">
           {[
             { id: 'general', label: 'General & Currency' },
+            { id: 'security', label: isPasswordRequired ? '🔒 Security & Passcode (Active)' : 'Security & Passcode' },
             { id: 'budgets', label: 'Monthly Budgets' },
             { id: 'categories', label: `Categories (${categories.length})` },
             { id: 'backup', label: 'Backup & Restore' },
@@ -340,6 +413,215 @@ CREATE POLICY "Allow public sync access"
                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
               </label>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: SECURITY & PASSCODE */}
+      {activeTab === 'security' && (
+        <div className="space-y-4">
+          {/* Status Banner */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3">
+                <div
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-md ${
+                    isPasswordRequired
+                      ? 'bg-emerald-500 text-white shadow-emerald-400/20'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {isPasswordRequired ? (
+                    <ShieldCheck className="w-6 h-6 stroke-[2.2]" />
+                  ) : (
+                    <KeyRound className="w-6 h-6 stroke-[2.2]" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      {isPasswordRequired ? 'Password Protection Active' : 'No Password Set'}
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        isPasswordRequired
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}
+                    >
+                      {isPasswordRequired ? 'Protected' : 'Unlocked'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {isPasswordRequired
+                      ? 'Your account, balances, funds, and transaction ledger are locked behind a password on this and all synced devices.'
+                      : 'Anyone who opens this app can view your account and transaction ledger. Set a passcode below to secure your finances.'}
+                  </p>
+                </div>
+              </div>
+
+              {isPasswordRequired && (
+                <button
+                  type="button"
+                  onClick={lockAccount}
+                  className="px-4 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-95 shrink-0"
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>Lock Screen Now</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Password Setup & Change Form */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-soft space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-amber-500" />
+                <span>{isPasswordRequired ? 'Change Account Passcode or Password' : 'Set Account Passcode or Password'}</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Use a memorable numeric PIN (e.g. 1234, 5829) or an alphanumeric password. It will be required whenever you open RizqWise.
+              </p>
+            </div>
+
+            <form onSubmit={handleSetOrUpdatePassword} className="space-y-4 pt-1">
+              {/* If password already exists, require current password */}
+              {isPasswordRequired && settings.appPassword && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Current Password
+                  </label>
+                  <div className="relative max-w-md">
+                    <input
+                      type={showCurrentPass ? 'text' : 'password'}
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      placeholder="Enter current password..."
+                      className="w-full px-3 py-2.5 pr-10 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPass(!showCurrentPass)}
+                      tabIndex={-1}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showCurrentPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {isPasswordRequired ? 'New Password / Passcode' : 'Choose Password / Passcode'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPass ? 'text' : 'password'}
+                      value={newPasswordInput}
+                      onChange={(e) => setNewPasswordInput(e.target.value)}
+                      placeholder="Min 4 characters or digits..."
+                      className="w-full px-3 py-2.5 pr-10 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      tabIndex={-1}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Confirm New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPass ? 'text' : 'password'}
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      placeholder="Re-enter new password..."
+                      className="w-full px-3 py-2.5 pr-10 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPass(!showConfirmPass)}
+                      tabIndex={-1}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Feedback Alert */}
+              {securityFeedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 max-w-xl ${
+                    securityFeedback.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {securityFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{securityFeedback.text}</span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 text-xs font-extrabold bg-brand-header hover:bg-amber-400 text-slate-950 rounded-xl shadow-md shadow-amber-400/20 transition-all flex items-center gap-2 active:scale-95"
+                >
+                  <Lock className="w-4 h-4 stroke-[2.5]" />
+                  <span>{isPasswordRequired ? 'Update Password' : 'Enable Password Protection'}</span>
+                </button>
+
+                {isPasswordRequired && (
+                  <button
+                    type="button"
+                    onClick={handleRemovePassword}
+                    className="px-4 py-2.5 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors flex items-center gap-1.5"
+                  >
+                    <Unlock className="w-4 h-4" />
+                    <span>Remove Password Protection</span>
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* Explainer card on cross-device sync & Vercel deployment */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/70 text-xs text-slate-600 space-y-2.5">
+            <h4 className="font-bold text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Multi-Device Protection & Privacy</span>
+            </h4>
+            <ul className="list-disc list-inside space-y-1.5 text-slate-500 leading-relaxed">
+              <li>
+                <strong>Automatic Cloud Sync:</strong> When you set a password, it syncs across your devices automatically via your Supabase database.
+              </li>
+              <li>
+                <strong>Zero Financial Leaks:</strong> When locked, no fund balances, transactions, or totals are visible or accessible without the passcode.
+              </li>
+              <li>
+                <strong>Remember This Device:</strong> You can check "Remember this device" on your personal phone or laptop so you don't have to enter the passcode on every tab refresh.
+              </li>
+              <li>
+                <strong>Deployment Environment Variable:</strong> You can also set a default deployment password by setting <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 font-mono text-[11px]">NEXT_PUBLIC_APP_PASSWORD</code> in your Vercel project settings.
+              </li>
+            </ul>
           </div>
         </div>
       )}

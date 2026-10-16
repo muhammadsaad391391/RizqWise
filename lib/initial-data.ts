@@ -164,4 +164,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   onboardingCompleted: false,
   budgetWarningThreshold: 80,
   cloudSyncEnabled: typeof process !== 'undefined' && Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+  isPasswordProtected: typeof process !== 'undefined' && Boolean(process.env.NEXT_PUBLIC_APP_PASSWORD),
+  appPassword: typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_APP_PASSWORD || '' : '',
+  autoLockMinutes: 0,
 };

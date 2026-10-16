@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useFinance } from '@/lib/context/finance-context';
 import { formatCurrency } from '@/lib/finance-engine';
 import { TransactionModal } from '@/components/modals/transaction-modal';
+import { LockScreen } from '@/components/auth/lock-screen';
 import {
   LayoutDashboard,
   PieChart,
@@ -20,6 +21,7 @@ import {
   Layers,
   Sparkles,
   Wallet,
+  Lock,
 } from 'lucide-react';
 import { format, addMonths, subMonths } from 'date-fns';
 
@@ -29,9 +31,22 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname();
-  const { summary, settings, selectedMonth, setSelectedMonth } = useFinance();
+  const {
+    summary,
+    settings,
+    selectedMonth,
+    setSelectedMonth,
+    isUnlocked,
+    isPasswordRequired,
+    lockAccount,
+  } = useFinance();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer'>('expense');
+
+  // If password lock is enabled and session is not unlocked, show lock screen
+  if (isPasswordRequired && !isUnlocked) {
+    return <LockScreen />;
+  }
 
   const navItems = [
     { label: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -119,6 +134,16 @@ export function AppLayout({ children }: AppLayoutProps) {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               All Funds Active
             </div>
+            {isPasswordRequired && (
+              <button
+                type="button"
+                onClick={lockAccount}
+                className="w-full mt-3 py-2 px-3 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-200/60 transition-colors flex items-center justify-center gap-1.5 border border-slate-200"
+              >
+                <Lock className="w-3.5 h-3.5 text-slate-500" />
+                <span>Lock Screen</span>
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -212,6 +237,19 @@ export function AppLayout({ children }: AppLayoutProps) {
                   ⇄ Transfer
                 </button>
               </div>
+
+              {/* Lock Screen Button */}
+              {isPasswordRequired && (
+                <button
+                  type="button"
+                  onClick={lockAccount}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-black/10 md:bg-slate-100 hover:bg-black/15 md:hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors ml-1"
+                  title="Lock account screen"
+                >
+                  <Lock className="w-3.5 h-3.5 text-slate-700" />
+                  <span className="hidden sm:inline">Lock</span>
+                </button>
+              )}
             </div>
           </div>
         </header>
