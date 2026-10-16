@@ -145,7 +145,7 @@ export default function FundDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => {
@@ -153,10 +153,10 @@ export default function FundDetailPage() {
               setAdjustError(null);
               setIsAdjustModalOpen(true);
             }}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-2 text-xs font-bold rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
           >
-            <Sliders className="w-3.5 h-3.5" />
-            Edit Balance
+            <Sliders className="w-3.5 h-3.5 shrink-0" />
+            <span>Edit Balance</span>
           </button>
           <button
             type="button"
@@ -169,26 +169,26 @@ export default function FundDetailPage() {
               setEditIcon(fund.icon);
               setIsEditModalOpen(true);
             }}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-2 text-xs font-bold rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
           >
-            <Edit2 className="w-3.5 h-3.5" />
-            Edit Fund
+            <Edit2 className="w-3.5 h-3.5 shrink-0" />
+            <span>Edit Fund</span>
           </button>
           <button
             type="button"
             onClick={() => openAction('expense')}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
           >
-            <ArrowDownRight className="w-3.5 h-3.5" />
-            Spend
+            <ArrowDownRight className="w-3.5 h-3.5 shrink-0" />
+            <span>Spend</span>
           </button>
           <button
             type="button"
             onClick={() => openAction('transfer')}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-2 text-xs font-bold rounded-xl bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
           >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
-            Transfer
+            <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+            <span>Transfer</span>
           </button>
         </div>
       </div>

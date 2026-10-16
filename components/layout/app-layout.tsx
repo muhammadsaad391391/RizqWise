@@ -255,7 +255,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         {/* Content Body */}
-        <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 md:py-6">
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 sm:pt-7 pb-28 md:py-8">
           {children}
         </main>
       </div>
