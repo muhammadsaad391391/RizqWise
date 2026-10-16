@@ -726,6 +726,19 @@ CREATE POLICY "Allow public sync access"
             )}
           </div>
 
+          {/* Vercel Environment Detection Banner */}
+          {Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) && (
+            <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold">Automated Vercel Cloud Database Active</div>
+                <div className="text-[11px] text-emerald-700 mt-0.5">
+                  Your Supabase credentials are configured via deployment environment variables. All your devices (phone, laptop, iPad) accessing this site automatically stay synchronized in real time with zero manual entry required.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Sync Form */}
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3">

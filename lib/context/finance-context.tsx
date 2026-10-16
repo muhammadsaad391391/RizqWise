@@ -18,7 +18,7 @@ import {
   calculateAllocations,
   validateAllocationRules,
 } from '@/lib/finance-engine';
-import { pushToSupabase, pullFromSupabase } from '@/lib/supabase';
+import { pushToSupabase, pullFromSupabase, getSupabaseClient } from '@/lib/supabase';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
 
 interface FinanceContextType {
@@ -201,7 +201,31 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
                 : [...cloudRes.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
               setCategories(finalCats);
             }
-            if (cloudRes.data.settings) setSettings(cloudRes.data.settings);
+            const mergedSettings = {
+              ...(cloudRes.data.settings || DEFAULT_SETTINGS),
+              cloudSyncEnabled: true,
+              supabaseUrl: sbUrl,
+              supabaseAnonKey: sbKey,
+              lastSyncedAt: new Date().toISOString(),
+            };
+            setSettings(mergedSettings);
+            loaded = true;
+          } else if (cloudRes.success && !cloudRes.data) {
+            // Table exists in Supabase but is empty! Automatically seed and push initial state!
+            const initialPayload = {
+              funds: DEFAULT_FUNDS,
+              transactions: [],
+              categories: DEFAULT_CATEGORIES,
+              settings: {
+                ...DEFAULT_SETTINGS,
+                cloudSyncEnabled: true,
+                supabaseUrl: sbUrl,
+                supabaseAnonKey: sbKey,
+                lastSyncedAt: new Date().toISOString(),
+              },
+            };
+            await pushToSupabase(initialPayload, sbUrl, sbKey);
+            setSettings(initialPayload.settings);
             loaded = true;
           }
         } catch (cloudErr) {
@@ -263,17 +287,17 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
     loadData();
 
-    // Auto-sync when device tab is focused or unlocked
+    // 4. Auto-sync when device tab is focused or unlocked
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
         const sbUrl =
-          localStorage.getItem('rizqwise_supabase_url') ||
-          localStorage.getItem('rizqflow_supabase_url') ||
-          process.env.NEXT_PUBLIC_SUPABASE_URL;
+          (typeof window !== 'undefined'
+            ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+            : null) || process.env.NEXT_PUBLIC_SUPABASE_URL;
         const sbKey =
-          localStorage.getItem('rizqwise_supabase_key') ||
-          localStorage.getItem('rizqflow_supabase_key') ||
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+          (typeof window !== 'undefined'
+            ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+            : null) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
         if (sbUrl && sbKey) {
           const cloudRes = await pullFromSupabase(sbUrl, sbKey);
@@ -287,6 +311,40 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // 5. Supabase Realtime channel subscription for instant cross-device updates
+    let client: any = null;
+    let channel: any = null;
+    const sbUrl =
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+        : null) || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const sbKey =
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+        : null) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (sbUrl && sbKey) {
+      client = getSupabaseClient(sbUrl, sbKey);
+      if (client) {
+        channel = client
+          .channel('rizqwise_realtime_sync')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'rizqwise_sync' },
+            (payload: any) => {
+              if (payload.new && payload.new.data) {
+                const remote = payload.new.data;
+                if (remote.funds) setFunds(remote.funds);
+                if (remote.transactions) setTransactions(remote.transactions);
+                if (remote.categories) setCategories(remote.categories);
+                if (remote.settings) setSettings(remote.settings);
+              }
+            }
+          )
+          .subscribe();
+      }
+    }
+
     if (typeof window !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibilityChange);
     }
@@ -294,6 +352,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (typeof window !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (client && channel) {
+        try {
+          client.removeChannel(channel);
+        } catch (_) {}
       }
     };
   }, []);
