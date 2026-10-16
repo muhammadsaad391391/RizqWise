@@ -112,7 +112,7 @@ export function calculateFinancialSummary(
       lifetimeSpent: 0,
       transfersReceived: 0,
       transfersSent: 0,
-      currentBalance: fund.openingBalance || 0,
+      currentBalance: (fund.openingBalance || 0) + (fund.manualBalanceAdjustment || 0),
       periodAllocated: 0,
       periodSpent: 0,
       periodTransfersReceived: 0,
@@ -121,6 +121,10 @@ export function calculateFinancialSummary(
       budgetSpent: 0,
       budgetRemaining: fund.monthlyBudget,
       budgetUtilization: 0,
+      totalDistributed: 0,
+      accountedAmount: 0,
+      deviation: 0,
+      isReconciled: true,
     };
   }
 
@@ -199,6 +203,17 @@ export function calculateFinancialSummary(
     calc.lifetimeSpent = Math.round(calc.lifetimeSpent * 100) / 100;
     calc.transfersReceived = Math.round(calc.transfersReceived * 100) / 100;
     calc.transfersSent = Math.round(calc.transfersSent * 100) / 100;
+
+    // Total Distributed & Reconciliation Tracking
+    calc.totalDistributed = calc.lifetimeAllocated;
+    const netTransfersOut = calc.transfersSent - calc.transfersReceived;
+    const totalInflow = calc.lifetimeAllocated + (fund.openingBalance || 0);
+    const accounted = calc.currentBalance + calc.lifetimeSpent + netTransfersOut;
+    const rawDeviation = Math.round((totalInflow - accounted) * 100) / 100;
+
+    calc.accountedAmount = Math.round(accounted * 100) / 100;
+    calc.deviation = rawDeviation;
+    calc.isReconciled = Math.abs(rawDeviation) < 0.01;
 
     if (!fund.isArchived) {
       totalBalance += calc.currentBalance;

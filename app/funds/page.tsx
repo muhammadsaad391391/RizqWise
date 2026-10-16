@@ -34,11 +34,25 @@ const ICON_OPTIONS = [
 ];
 
 export default function FundsPage() {
-  const { funds, summary, settings, addFund, updateFund, deleteFund, updateAllocationRules } = useFinance();
+  const {
+    funds,
+    summary,
+    settings,
+    addFund,
+    updateFund,
+    deleteFund,
+    updateAllocationRules,
+    adjustFundBalance,
+  } = useFinance();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [editingFund, setEditingFund] = useState<Fund | null>(null);
+
+  // Direct Balance Adjustment modal state
+  const [adjustingFund, setAdjustingFund] = useState<Fund | null>(null);
+  const [targetBalanceInput, setTargetBalanceInput] = useState('');
+  const [adjustError, setAdjustError] = useState<string | null>(null);
 
   // Add Fund Form state
   const [fundName, setFundName] = useState('');
@@ -99,7 +113,7 @@ export default function FundsPage() {
         icon: fundIcon,
         color: fundColor,
         allocationPercentage: parseFloat(fundPercentage) || 0,
-        openingBalance: parseFloat(fundOpeningBalance) || 0,
+        currentBalance: parseFloat(fundOpeningBalance) || 0,
         monthlyBudget: fundBudget ? parseFloat(fundBudget) : null,
       });
       setEditingFund(null);
@@ -132,9 +146,33 @@ export default function FundsPage() {
     setFundIcon(f.icon);
     setFundColor(f.color);
     setFundPercentage(f.allocationPercentage.toString());
-    setFundOpeningBalance(f.openingBalance.toString());
+    const currentBal = summary.fundCalculations[f.id]?.currentBalance ?? f.openingBalance;
+    setFundOpeningBalance(currentBal.toString());
     setFundBudget(f.monthlyBudget ? f.monthlyBudget.toString() : '');
     setIsAddModalOpen(true);
+  };
+
+  const openAdjustBalanceModal = (fund: Fund) => {
+    const currentBal = summary.fundCalculations[fund.id]?.currentBalance ?? fund.openingBalance;
+    setAdjustingFund(fund);
+    setTargetBalanceInput(currentBal.toString());
+    setAdjustError(null);
+  };
+
+  const handleSaveAdjustBalance = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingFund) return;
+    const target = parseFloat(targetBalanceInput);
+    if (isNaN(target)) {
+      setAdjustError('Please enter a valid numeric balance.');
+      return;
+    }
+    const res = adjustFundBalance(adjustingFund.id, target);
+    if (!res.success) {
+      setAdjustError(res.error || 'Failed to adjust balance');
+      return;
+    }
+    setAdjustingFund(null);
   };
 
   return (
@@ -282,13 +320,24 @@ export default function FundsPage() {
                   </div>
                 </div>
 
-                {/* Available Balance */}
+                {/* Available Balance & Direct Quick Edit */}
                 <div className="mt-4 p-3.5 bg-slate-50/70 rounded-xl border border-slate-100">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Current Available Balance
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Current Available Balance
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openAdjustBalanceModal(fund)}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-200/80 transition-all shadow-xs"
+                      title="Directly edit and adjust current balance"
+                    >
+                      <Sliders className="w-3 h-3" />
+                      Edit Balance
+                    </button>
+                  </div>
                   <div
-                    className={`text-2xl font-black tracking-tight mt-0.5 ${
+                    className={`text-2xl font-black tracking-tight mt-1 ${
                       isNegative ? 'text-red-600' : 'text-slate-900'
                     }`}
                   >
@@ -296,19 +345,19 @@ export default function FundsPage() {
                   </div>
                 </div>
 
-                {/* Lifetime Stats */}
+                {/* Lifetime Distributed & Spent for Causes */}
                 <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-                  <div className="p-2.5 rounded-lg bg-emerald-50/50 border border-emerald-100">
+                  <div className="p-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100/80">
                     <span className="text-[10px] text-emerald-800 font-semibold block">
-                      Lifetime Allocated
+                      Total Distributed
                     </span>
                     <span className="font-extrabold text-emerald-700">
-                      +{formatCurrency(calc.lifetimeAllocated, settings)}
+                      +{formatCurrency(calc.totalDistributed ?? calc.lifetimeAllocated, settings)}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
                     <span className="text-[10px] text-slate-500 font-semibold block">
-                      Lifetime Spent
+                      Spent for Causes
                     </span>
                     <span className="font-extrabold text-slate-800">
                       -{formatCurrency(calc.lifetimeSpent, settings)}
@@ -316,10 +365,33 @@ export default function FundsPage() {
                   </div>
                 </div>
 
-                {/* Opening balance indicator if present */}
+                {/* Reconciliation & Deviation Tracker */}
+                <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-medium">Reconciliation:</span>
+                  {calc.isReconciled ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      0 Difference
+                    </span>
+                  ) : calc.deviation > 0 ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-900"
+                      title={`Deviation: ${formatCurrency(calc.deviation, settings)} unaccounted difference`}
+                    >
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      {formatCurrency(calc.deviation, settings)} Deviation
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-800">
+                      +{formatCurrency(Math.abs(calc.deviation), settings)} Surplus
+                    </span>
+                  )}
+                </div>
+
+                {/* Initial capital indicator if present */}
                 {fund.openingBalance > 0 && (
-                  <div className="mt-2 text-[11px] text-slate-500 font-medium">
-                    Initial Capital: {formatCurrency(fund.openingBalance, settings)}
+                  <div className="mt-2 text-[11px] text-slate-400 font-medium">
+                    Starting Capital: {formatCurrency(fund.openingBalance, settings)}
                   </div>
                 )}
               </div>
@@ -433,11 +505,10 @@ export default function FundsPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
-                    Starting Capital ({settings.currencySymbol})
+                    {editingFund ? 'Current Available Balance' : 'Starting Capital'} ({settings.currencySymbol})
                   </label>
                   <input
                     type="number"
-                    min="0"
                     step="any"
                     placeholder="0"
                     value={fundOpeningBalance}
@@ -579,6 +650,145 @@ export default function FundsPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: DIRECT BALANCE ADJUSTMENT MODAL */}
+      {adjustingFund && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-brand-header px-5 py-4 flex items-center justify-between border-b border-brand-500/20">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-slate-900" />
+                <h3 className="font-bold text-slate-950">
+                  Edit Balance: {adjustingFund.name}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdjustingFund(null)}
+                className="text-slate-700 hover:text-slate-950"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAdjustBalance} className="p-5 space-y-4">
+              {adjustError && (
+                <div className="p-3 bg-red-50 text-red-700 rounded-xl text-xs font-semibold">
+                  {adjustError}
+                </div>
+              )}
+
+              {/* Fund Summary Stats */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>Total Distributed from Income:</span>
+                  <span className="font-bold text-emerald-700">
+                    +{formatCurrency(summary.fundCalculations[adjustingFund.id]?.totalDistributed ?? summary.fundCalculations[adjustingFund.id]?.lifetimeAllocated ?? 0, settings)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>Spent for Causes / Expenses:</span>
+                  <span className="font-bold text-slate-800">
+                    -{formatCurrency(summary.fundCalculations[adjustingFund.id]?.lifetimeSpent || 0, settings)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-900 font-semibold pt-1 border-t border-slate-200">
+                  <span>Current Recorded Balance:</span>
+                  <span className="font-black text-amber-700">
+                    {formatCurrency(summary.fundCalculations[adjustingFund.id]?.currentBalance || 0, settings)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  New Available Balance ({settings.currencySymbol})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  required
+                  autoFocus
+                  placeholder="0.00"
+                  value={targetBalanceInput}
+                  onChange={(e) => setTargetBalanceInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-base font-bold border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Adjust this fund to match your current physical cash or bank balance. RizqWise tracks the deviation against distributed income automatically.
+                </p>
+              </div>
+
+              {/* Live Preview of Deviation */}
+              {(() => {
+                const target = parseFloat(targetBalanceInput);
+                if (isNaN(target)) return null;
+                const calc = summary.fundCalculations[adjustingFund.id];
+                const totalDist = calc ? (calc.totalDistributed ?? calc.lifetimeAllocated) : 0;
+                const spent = calc ? calc.lifetimeSpent : 0;
+                const netTrf = calc ? (calc.transfersSent - calc.transfersReceived) : 0;
+                const initialCap = adjustingFund.openingBalance || 0;
+                const previewAccounted = target + spent + netTrf;
+                const previewDev = Math.round(((totalDist + initialCap) - previewAccounted) * 100) / 100;
+
+                return (
+                  <div
+                    className={`p-3 rounded-xl border text-xs ${
+                      Math.abs(previewDev) < 0.01
+                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                        : previewDev > 0
+                        ? 'bg-amber-50/80 border-amber-200 text-amber-900'
+                        : 'bg-sky-50/80 border-sky-200 text-sky-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold">
+                      {Math.abs(previewDev) < 0.01 ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          0 Difference • Fully Reconciled
+                        </>
+                      ) : previewDev > 0 ? (
+                        <>
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          {formatCurrency(previewDev, settings)} Deviation (Unaccounted difference)
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0" />
+                          +{formatCurrency(Math.abs(previewDev), settings)} Surplus
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[11px] mt-1 text-slate-600 leading-relaxed">
+                      {Math.abs(previewDev) < 0.01
+                        ? 'Your balance and recorded expenses match total distributed funds perfectly.'
+                        : previewDev > 0
+                        ? `There is a difference of ${formatCurrency(previewDev, settings)} between distributed income and this balance. Once you record an expense for this cause, the difference will automatically return to 0.`
+                        : `Your balance exceeds distributed funds by ${formatCurrency(Math.abs(previewDev), settings)}.`}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAdjustingFund(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-md"
+                >
+                  Save New Balance
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

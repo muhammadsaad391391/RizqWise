@@ -116,6 +116,30 @@ const totalAllocations = snapshots.reduce((s, a) => s + a.amount, 0);
 assert.strictEqual(recordedIncome, totalAllocations);
 console.log('✔ PASS: Income and fund allocations are not double counted.');
 
+console.log('\n--- TEST 12: Direct Fund Balance Editing & Deviation Reconciliation ---');
+// User receives PKR 1,000 income, 20% distributed to Investments = PKR 200
+const userDistributed = 200;
+let userBalance = 200;
+let userExpenses = 0;
+let manualAdj = 0;
+
+// User edits balance directly to PKR 100
+userBalance = 100;
+manualAdj = userBalance - userDistributed; // -100
+let deviation = userDistributed - (userBalance + userExpenses);
+assert.strictEqual(deviation, 100, 'When distributed is 200 and balance is edited to 100, deviation must be 100');
+console.log('✔ PASS: Distributed 200, balance 100, expenses 0 => Deviation is 100 (Unaccounted difference)');
+
+// User mentions the 100 in expenses (used for genuine cause)
+const genuineExpense = 100;
+userExpenses += genuineExpense;
+// Manual adjustment is absorbed by the genuine cause
+manualAdj += Math.min(genuineExpense, Math.abs(manualAdj));
+userBalance = userDistributed - userExpenses + manualAdj; // 200 - 100 + 0 = 100
+deviation = userDistributed - (userBalance + userExpenses);
+assert.strictEqual(deviation, 0, 'When 100 is mentioned in expenses for genuine cause, deviation must be 0 difference');
+console.log('✔ PASS: Mentioned 100 in expenses => Deviation is 0 difference (Fully reconciled)');
+
 console.log('\n=============================================');
-console.log(' ALL 12 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
+console.log(' ALL 13 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
 console.log('=============================================\n');

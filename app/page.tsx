@@ -196,6 +196,10 @@ export default function DashboardPage() {
           {activeFunds.map((fund) => {
             const calc = summary.fundCalculations[fund.id] || {
               currentBalance: fund.openingBalance || 0,
+              lifetimeAllocated: 0,
+              totalDistributed: 0,
+              deviation: 0,
+              isReconciled: true,
               periodAllocated: 0,
               periodSpent: 0,
             };
@@ -208,26 +212,45 @@ export default function DashboardPage() {
                 className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-soft hover:shadow-card hover:border-amber-400 transition-all group flex flex-col justify-between"
               >
                 <div>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs shrink-0"
-                      style={{ backgroundColor: fund.color }}
-                    >
-                      <IconRenderer name={fund.icon} className="w-3.5 h-3.5" />
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs shrink-0 shadow-xs"
+                        style={{ backgroundColor: fund.color }}
+                      >
+                        <IconRenderer name={fund.icon} className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-slate-800 truncate group-hover:text-amber-700">
+                          {fund.name}
+                        </h4>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {fund.allocationPercentage}%
+                        </span>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-800 truncate group-hover:text-amber-700">
-                        {fund.name}
-                      </h4>
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        {fund.allocationPercentage}%
+
+                    {/* Reconciliation Pill */}
+                    {calc.isReconciled ? (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200/70 text-emerald-700 shrink-0">
+                        0 Diff
                       </span>
-                    </div>
+                    ) : (calc.deviation ?? 0) > 0 ? (
+                      <span
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 shrink-0"
+                        title={`Deviation: ${formatCurrency(calc.deviation, settings)}`}
+                      >
+                        Diff
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="mt-3">
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                      Available
+                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                      <span>Available</span>
+                      <span className="text-emerald-700 font-bold lowercase">
+                        +{formatCurrency(calc.totalDistributed ?? calc.lifetimeAllocated ?? 0, settings)}
+                      </span>
                     </div>
                     <div
                       className={`text-base sm:text-lg font-black tracking-tight mt-0.5 truncate ${

@@ -5,6 +5,7 @@ export interface Fund {
   color: string;
   allocationPercentage: number;
   openingBalance: number;
+  manualBalanceAdjustment?: number;
   monthlyBudget: number | null;
   isArchived: boolean;
   order: number;
@@ -110,6 +111,11 @@ export interface FundCalculations {
   budgetSpent: number;
   budgetRemaining: number | null;
   budgetUtilization: number | null;
+  // Reconciliation & Deviation Tracker
+  totalDistributed: number;
+  accountedAmount: number;
+  deviation: number;
+  isReconciled: boolean;
 }
 
 export interface DashboardSummary {

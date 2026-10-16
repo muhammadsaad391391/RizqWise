@@ -70,7 +70,8 @@ interface FinanceContextType {
     openingBalance?: number;
     monthlyBudget?: number | null;
   }) => { success: boolean; error?: string };
-  updateFund: (id: string, updated: Partial<Fund>) => { success: boolean; error?: string };
+  updateFund: (id: string, updated: Partial<Fund> & { currentBalance?: number }) => { success: boolean; error?: string };
+  adjustFundBalance: (id: string, newTargetBalance: number) => { success: boolean; error?: string };
   deleteFund: (id: string) => { success: boolean; error?: string };
   updateAllocationRules: (rules: { fundId: string; percentage: number }[]) => { success: boolean; error?: string };
   addCategory: (category: { name: string; icon: string; color: string; type: 'expense' | 'income' }) => Category;
@@ -558,9 +559,24 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
 
+      // If target fund has an unrecorded balance deviation (manualBalanceAdjustment < 0),
+      // absorb up to the expense amount so recording the genuine cause accounts for the difference.
+      let nextFunds = funds;
+      if (targetFund && (targetFund.manualBalanceAdjustment || 0) < 0) {
+        const curAdj = targetFund.manualBalanceAdjustment || 0;
+        const absorb = Math.min(amount, Math.abs(curAdj));
+        const newAdj = Math.round((curAdj + absorb) * 100) / 100;
+        nextFunds = funds.map((f) =>
+          f.id === fundId
+            ? { ...f, manualBalanceAdjustment: newAdj, updatedAt: new Date().toISOString() }
+            : f
+        );
+        setFunds(nextFunds);
+      }
+
       const nextTransactions = [newTx, ...transactions];
       setTransactions(nextTransactions);
-      persistState(funds, nextTransactions, categories, settings);
+      persistState(nextFunds, nextTransactions, categories, settings);
 
       return { success: true };
     },
@@ -717,14 +733,26 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [funds, transactions, categories, settings, persistState]
   );
 
-  // Update fund
+  // Update fund (supports editing name, icon, color, percentages, budget, and direct currentBalance)
   const updateFund = useCallback(
-    (id: string, updated: Partial<Fund>) => {
+    (id: string, updated: Partial<Fund> & { currentBalance?: number }) => {
+      const fund = funds.find((f) => f.id === id);
+      if (!fund) return { success: false, error: 'Fund not found' };
+
+      let nextAdjustment = fund.manualBalanceAdjustment || 0;
+      if (updated.currentBalance !== undefined) {
+        const calc = summary.fundCalculations[id];
+        const current = calc ? calc.currentBalance : ((fund.openingBalance || 0) + nextAdjustment);
+        const delta = Math.round((Number(updated.currentBalance) - current) * 100) / 100;
+        nextAdjustment = Math.round((nextAdjustment + delta) * 100) / 100;
+      }
+
       const nextFunds = funds.map((f) =>
         f.id === id
           ? {
               ...f,
               ...updated,
+              manualBalanceAdjustment: nextAdjustment,
               updatedAt: new Date().toISOString(),
             }
           : f
@@ -733,7 +761,37 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       persistState(nextFunds, transactions, categories, settings);
       return { success: true };
     },
-    [funds, transactions, categories, settings, persistState]
+    [funds, summary.fundCalculations, transactions, categories, settings, persistState]
+  );
+
+  // Directly adjust current balance of any fund
+  const adjustFundBalance = useCallback(
+    (id: string, newTargetBalance: number) => {
+      const fund = funds.find((f) => f.id === id);
+      if (!fund) return { success: false, error: 'Fund not found' };
+
+      const calc = summary.fundCalculations[id] || {
+        currentBalance: (fund.openingBalance || 0) + (fund.manualBalanceAdjustment || 0),
+      };
+      const current = calc.currentBalance;
+      const delta = Math.round((Number(newTargetBalance) - current) * 100) / 100;
+      const nextAdjustment = Math.round(((fund.manualBalanceAdjustment || 0) + delta) * 100) / 100;
+
+      const nextFunds = funds.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              manualBalanceAdjustment: nextAdjustment,
+              updatedAt: new Date().toISOString(),
+            }
+          : f
+      );
+
+      setFunds(nextFunds);
+      persistState(nextFunds, transactions, categories, settings);
+      return { success: true };
+    },
+    [funds, summary.fundCalculations, transactions, categories, settings, persistState]
   );
 
   // Delete/Archive fund
@@ -1105,6 +1163,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         deleteTransaction,
         addFund,
         updateFund,
+        adjustFundBalance,
         deleteFund,
         updateAllocationRules,
         addCategory,
