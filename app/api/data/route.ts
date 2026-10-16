@@ -12,11 +12,22 @@ interface StorageData {
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'rizqflow-db.json');
+const DATA_FILE = path.join(DATA_DIR, 'rizqwise-db.json');
+const LEGACY_FILE = path.join(DATA_DIR, 'rizqflow-db.json');
 
 function ensureDataFile(): StorageData {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  // If new file doesn't exist but legacy file exists, migrate it seamlessly
+  if (!fs.existsSync(DATA_FILE) && fs.existsSync(LEGACY_FILE)) {
+    try {
+      const legacyContent = fs.readFileSync(LEGACY_FILE, 'utf8');
+      fs.writeFileSync(DATA_FILE, legacyContent, 'utf8');
+    } catch (e) {
+      console.warn('Migration from legacy database file failed:', e);
+    }
   }
 
   if (!fs.existsSync(DATA_FILE)) {
@@ -68,7 +79,12 @@ export async function POST(req: Request) {
       settings: body.settings ?? currentData.settings,
     };
 
-    fs.writeFileSync(DATA_FILE, JSON.stringify(updatedData, null, 2), 'utf8');
+    const serialized = JSON.stringify(updatedData, null, 2);
+    fs.writeFileSync(DATA_FILE, serialized, 'utf8');
+    try {
+      fs.writeFileSync(LEGACY_FILE, serialized, 'utf8');
+    } catch (_) {}
+
     return NextResponse.json({ success: true, data: updatedData });
   } catch (error) {
     return NextResponse.json(

@@ -86,7 +86,8 @@ interface FinanceContextType {
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'rizqflow_state_v1';
+const LOCAL_STORAGE_KEY = 'rizqwise_state_v1';
+const LEGACY_STORAGE_KEY = 'rizqflow_state_v1';
 
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [funds, setFunds] = useState<Fund[]>(DEFAULT_FUNDS);
@@ -107,15 +108,14 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       // 1. Sync to localStorage immediately for instant local caching
       try {
         if (typeof window !== 'undefined') {
-          localStorage.setItem(
-            LOCAL_STORAGE_KEY,
-            JSON.stringify({
-              funds: newFunds,
-              transactions: newTransactions,
-              categories: newCategories,
-              settings: newSettings,
-            })
-          );
+          const serialized = JSON.stringify({
+            funds: newFunds,
+            transactions: newTransactions,
+            categories: newCategories,
+            settings: newSettings,
+          });
+          localStorage.setItem(LOCAL_STORAGE_KEY, serialized);
+          localStorage.setItem(LEGACY_STORAGE_KEY, serialized);
         }
       } catch (e) {
         console.error('Failed to save to localStorage:', e);
@@ -139,8 +139,18 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
       // 3. Sync to Supabase cloud if enabled
       try {
-        const url = newSettings.supabaseUrl || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const key = newSettings.supabaseAnonKey || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        const url =
+          newSettings.supabaseUrl ||
+          (typeof window !== 'undefined'
+            ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+            : undefined) ||
+          process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const key =
+          newSettings.supabaseAnonKey ||
+          (typeof window !== 'undefined'
+            ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+            : undefined) ||
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
         if (url && key) {
           await pushToSupabase(
@@ -161,35 +171,75 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Initial load: Fetch from API, fallback to localStorage
+  // Initial load: 1. Try Supabase Cloud Database (for cross-device sync)
+  //               2. Try Server API (/api/data)
+  //               3. Fallback to localStorage cache
   useEffect(() => {
     async function loadData() {
       let loaded = false;
-      try {
-        const res = await fetch('/api/data');
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            if (json.data.funds && json.data.funds.length > 0) setFunds(json.data.funds);
-            if (json.data.transactions) setTransactions(json.data.transactions);
-            if (json.data.categories && json.data.categories.length > 0) {
-              const hasIncome = json.data.categories.some((c: Category) => c.type === 'income');
+
+      // 1. Check Supabase Cloud first for multi-device sync
+      const sbUrl =
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+          : null) || process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const sbKey =
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+          : null) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (sbUrl && sbKey) {
+        try {
+          const cloudRes = await pullFromSupabase(sbUrl, sbKey);
+          if (cloudRes.success && cloudRes.data) {
+            if (cloudRes.data.funds && cloudRes.data.funds.length > 0) setFunds(cloudRes.data.funds);
+            if (cloudRes.data.transactions) setTransactions(cloudRes.data.transactions);
+            if (cloudRes.data.categories && cloudRes.data.categories.length > 0) {
+              const hasIncome = cloudRes.data.categories.some((c: Category) => c.type === 'income');
               const finalCats = hasIncome
-                ? json.data.categories
-                : [...json.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
+                ? cloudRes.data.categories
+                : [...cloudRes.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
               setCategories(finalCats);
             }
-            if (json.data.settings) setSettings(json.data.settings);
+            if (cloudRes.data.settings) setSettings(cloudRes.data.settings);
             loaded = true;
           }
+        } catch (cloudErr) {
+          console.warn('Supabase cloud fetch failed, falling back to local...', cloudErr);
         }
-      } catch (err) {
-        console.warn('Backend fetch failed, checking localStorage fallback...', err);
       }
 
+      // 2. Fallback to server API
+      if (!loaded) {
+        try {
+          const res = await fetch('/api/data');
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && json.data) {
+              if (json.data.funds && json.data.funds.length > 0) setFunds(json.data.funds);
+              if (json.data.transactions) setTransactions(json.data.transactions);
+              if (json.data.categories && json.data.categories.length > 0) {
+                const hasIncome = json.data.categories.some((c: Category) => c.type === 'income');
+                const finalCats = hasIncome
+                  ? json.data.categories
+                  : [...json.data.categories, ...DEFAULT_CATEGORIES.filter((c) => c.type === 'income')];
+                setCategories(finalCats);
+              }
+              if (json.data.settings) setSettings(json.data.settings);
+              loaded = true;
+            }
+          }
+        } catch (err) {
+          console.warn('Backend fetch failed, checking localStorage fallback...', err);
+        }
+      }
+
+      // 3. Fallback to localStorage
       if (!loaded && typeof window !== 'undefined') {
         try {
-          const cached = localStorage.getItem(LOCAL_STORAGE_KEY);
+          const cached =
+            localStorage.getItem(LOCAL_STORAGE_KEY) ||
+            localStorage.getItem(LEGACY_STORAGE_KEY);
           if (cached) {
             const parsed = JSON.parse(cached);
             if (parsed.funds) setFunds(parsed.funds);
@@ -212,6 +262,40 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     }
 
     loadData();
+
+    // Auto-sync when device tab is focused or unlocked
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        const sbUrl =
+          localStorage.getItem('rizqwise_supabase_url') ||
+          localStorage.getItem('rizqflow_supabase_url') ||
+          process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const sbKey =
+          localStorage.getItem('rizqwise_supabase_key') ||
+          localStorage.getItem('rizqflow_supabase_key') ||
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (sbUrl && sbKey) {
+          const cloudRes = await pullFromSupabase(sbUrl, sbKey);
+          if (cloudRes.success && cloudRes.data) {
+            if (cloudRes.data.funds) setFunds(cloudRes.data.funds);
+            if (cloudRes.data.transactions) setTransactions(cloudRes.data.transactions);
+            if (cloudRes.data.categories) setCategories(cloudRes.data.categories);
+            if (cloudRes.data.settings) setSettings(cloudRes.data.settings);
+          }
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
   }, []);
 
   // Compute date range for selected month
@@ -643,14 +727,28 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   // Sync with Cloud Database
   const syncWithCloud = useCallback(
     async (customUrl?: string, customKey?: string) => {
-      const url = customUrl || settings.supabaseUrl || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const key = customKey || settings.supabaseAnonKey || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const url =
+        customUrl ||
+        settings.supabaseUrl ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+          : undefined) ||
+        process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key =
+        customKey ||
+        settings.supabaseAnonKey ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+          : undefined) ||
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
       if (!url || !key) {
         return { success: false, message: 'Please enter your Supabase Project URL and Anon API Key.' };
       }
 
       if (typeof window !== 'undefined') {
+        localStorage.setItem('rizqwise_supabase_url', url);
+        localStorage.setItem('rizqwise_supabase_key', key);
         localStorage.setItem('rizqflow_supabase_url', url);
         localStorage.setItem('rizqflow_supabase_key', key);
       }
@@ -686,8 +784,20 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   // Pull latest from Cloud Database
   const pullLatestFromCloud = useCallback(
     async (customUrl?: string, customKey?: string) => {
-      const url = customUrl || settings.supabaseUrl || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const key = customKey || settings.supabaseAnonKey || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : undefined) || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const url =
+        customUrl ||
+        settings.supabaseUrl ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+          : undefined) ||
+        process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key =
+        customKey ||
+        settings.supabaseAnonKey ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+          : undefined) ||
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
       if (!url || !key) {
         return { success: false, message: 'Supabase credentials missing.' };

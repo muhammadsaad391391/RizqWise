@@ -6,8 +6,18 @@ let currentUrl: string | null = null;
 let currentKey: string | null = null;
 
 export function getSupabaseClient(customUrl?: string, customKey?: string): SupabaseClient | null {
-  const url = customUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_url') : null);
-  const key = customKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || (typeof window !== 'undefined' ? localStorage.getItem('rizqflow_supabase_key') : null);
+  const url =
+    customUrl ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    (typeof window !== 'undefined'
+      ? localStorage.getItem('rizqwise_supabase_url') || localStorage.getItem('rizqflow_supabase_url')
+      : null);
+  const key =
+    customKey ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    (typeof window !== 'undefined'
+      ? localStorage.getItem('rizqwise_supabase_key') || localStorage.getItem('rizqflow_supabase_key')
+      : null);
 
   if (!url || !key) {
     return null;
@@ -32,14 +42,23 @@ export function getSupabaseClient(customUrl?: string, customKey?: string): Supab
   return supabaseInstance;
 }
 
-export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; error?: string }> {
+export async function testSupabaseConnection(
+  url: string,
+  key: string
+): Promise<{ success: boolean; error?: string }> {
   try {
     const client = createClient(url, key);
-    // Simple query to verify connection
-    const { error } = await client.from('rizqflow_sync').select('id').limit(1);
-    // Even if table doesn't exist yet, a 404 or specific code means credentials worked
-    if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-      return { success: false, error: error.message };
+    // Query either rizqwise_sync or rizqflow_sync
+    const { error: err1 } = await client.from('rizqwise_sync').select('id').limit(1);
+    if (!err1 || err1.code === 'PGRST116') {
+      return { success: true };
+    }
+    const { error: err2 } = await client.from('rizqflow_sync').select('id').limit(1);
+    if (!err2 || err2.code === 'PGRST116') {
+      return { success: true };
+    }
+    if (err1 && err1.code !== '42P01' && err1.code !== 'PGRST116') {
+      return { success: false, error: err1.message };
     }
     return { success: true };
   } catch (err: any) {
@@ -67,34 +86,43 @@ export async function pushToSupabase(
     return { success: false, error: 'Supabase credentials not configured' };
   }
 
-  try {
-    // Upsert into rizqflow_sync table with single sync ID 'primary_sync'
-    const { error } = await client.from('rizqflow_sync').upsert(
-      {
-        id: 'primary_sync',
-        data: {
-          funds: data.funds,
-          transactions: data.transactions,
-          categories: data.categories,
-          settings: data.settings,
-        },
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' }
-    );
+  const payload = {
+    id: 'primary_sync',
+    data: {
+      funds: data.funds,
+      transactions: data.transactions,
+      categories: data.categories,
+      settings: data.settings,
+    },
+    updated_at: new Date().toISOString(),
+  };
 
-    if (error) {
-      // If table doesn't exist, we inform the user to run the 2-line SQL script
-      if (error.code === '42P01') {
-        return {
-          success: false,
-          error: 'Table "rizqflow_sync" does not exist yet. Please run the SQL snippet in Supabase SQL editor.',
-        };
-      }
-      return { success: false, error: error.message };
+  try {
+    // 1. Try pushing to rizqwise_sync table
+    const { error } = await client.from('rizqwise_sync').upsert(payload, { onConflict: 'id' });
+
+    if (!error) {
+      return { success: true };
     }
 
-    return { success: true };
+    // 2. If rizqwise_sync table does not exist (42P01), try fallback to legacy rizqflow_sync table
+    if (error.code === '42P01') {
+      const { error: legacyError } = await client
+        .from('rizqflow_sync')
+        .upsert(payload, { onConflict: 'id' });
+
+      if (!legacyError) {
+        return { success: true };
+      }
+
+      return {
+        success: false,
+        error:
+          'Table "rizqwise_sync" does not exist yet. Please run the SQL snippet in your Supabase SQL editor.',
+      };
+    }
+
+    return { success: false, error: error.message };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Sync failed' };
   }
@@ -113,22 +141,36 @@ export async function pullFromSupabase(
   }
 
   try {
+    // 1. Try pulling from rizqwise_sync table
     const { data, error } = await client
-      .from('rizqflow_sync')
+      .from('rizqwise_sync')
       .select('data, updated_at')
       .eq('id', 'primary_sync')
       .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No record exists yet
-        return { success: true, data: undefined };
-      }
-      return { success: false, error: error.message };
+    if (!error && data && data.data) {
+      return { success: true, data: data.data as CloudSyncPayload };
     }
 
-    if (data && data.data) {
-      return { success: true, data: data.data as CloudSyncPayload };
+    // 2. Fallback to legacy rizqflow_sync table if 42P01 or empty
+    if (error && error.code === '42P01') {
+      const { data: legacyData, error: legacyError } = await client
+        .from('rizqflow_sync')
+        .select('data, updated_at')
+        .eq('id', 'primary_sync')
+        .single();
+
+      if (!legacyError && legacyData && legacyData.data) {
+        return { success: true, data: legacyData.data as CloudSyncPayload };
+      }
+
+      if (legacyError && legacyError.code !== 'PGRST116') {
+        return { success: false, error: legacyError.message };
+      }
+    }
+
+    if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
+      return { success: false, error: error.message };
     }
 
     return { success: true, data: undefined };

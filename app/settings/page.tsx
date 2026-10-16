@@ -82,8 +82,16 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedUrl = settings.supabaseUrl || localStorage.getItem('rizqflow_supabase_url') || '';
-      const storedKey = settings.supabaseAnonKey || localStorage.getItem('rizqflow_supabase_key') || '';
+      const storedUrl =
+        settings.supabaseUrl ||
+        localStorage.getItem('rizqwise_supabase_url') ||
+        localStorage.getItem('rizqflow_supabase_url') ||
+        '';
+      const storedKey =
+        settings.supabaseAnonKey ||
+        localStorage.getItem('rizqwise_supabase_key') ||
+        localStorage.getItem('rizqflow_supabase_key') ||
+        '';
       setSupabaseUrl(storedUrl);
       setSupabaseKey(storedKey);
     }
@@ -106,7 +114,7 @@ export default function SettingsPage() {
     const backupData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
-      appName: 'RizqFlow',
+      appName: 'RizqWise',
       settings,
       funds,
       categories,
@@ -120,7 +128,7 @@ export default function SettingsPage() {
     downloadAnchor.setAttribute('href', jsonString);
     downloadAnchor.setAttribute(
       'download',
-      `RizqFlow_Backup_${format(new Date(), 'yyyy-MM-dd')}.json`
+      `RizqWise_Backup_${format(new Date(), 'yyyy-MM-dd')}.json`
     );
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
@@ -211,16 +219,16 @@ export default function SettingsPage() {
 
   const copySqlToClipboard = () => {
     const sql = `-- Supabase PostgreSQL Table for Instant Cross-Device Sync
-CREATE TABLE IF NOT EXISTS public.rizqflow_sync (
+CREATE TABLE IF NOT EXISTS public.rizqwise_sync (
     id TEXT PRIMARY KEY DEFAULT 'primary_sync',
     data JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.rizqflow_sync ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rizqwise_sync ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public sync access"
-    ON public.rizqflow_sync FOR ALL
+    ON public.rizqwise_sync FOR ALL
     USING (true)
     WITH CHECK (true);`;
     navigator.clipboard.writeText(sql);
@@ -649,7 +657,7 @@ CREATE POLICY "Allow public sync access"
                   Restore from JSON Backup
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Import a previously exported RizqFlow backup file.
+                  Import a previously exported RizqWise backup file.
                 </p>
                 <input
                   type="file"
@@ -682,7 +690,7 @@ CREATE POLICY "Allow public sync access"
                 onClick={() => {
                   if (confirm('Are you absolutely sure you want to reset all data to default? This cannot be undone unless you have a backup.')) {
                     resetToDefaults();
-                    alert('RizqFlow has been reset to defaults.');
+                    alert('RizqWise has been reset to defaults.');
                   }
                 }}
                 className="py-1.5 px-3 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
@@ -821,16 +829,16 @@ CREATE POLICY "Allow public sync access"
               </div>
               <pre className="p-3 bg-slate-900 text-amber-300 text-[11px] rounded-xl overflow-x-auto font-mono">
 {`-- Supabase PostgreSQL Table for Instant Cross-Device Sync
-CREATE TABLE IF NOT EXISTS public.rizqflow_sync (
+CREATE TABLE IF NOT EXISTS public.rizqwise_sync (
     id TEXT PRIMARY KEY DEFAULT 'primary_sync',
     data JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.rizqflow_sync ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rizqwise_sync ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public sync access"
-    ON public.rizqflow_sync FOR ALL
+    ON public.rizqwise_sync FOR ALL
     USING (true)
     WITH CHECK (true);`}
               </pre>

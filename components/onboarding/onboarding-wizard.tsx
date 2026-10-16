@@ -85,7 +85,7 @@ export function OnboardingWizard() {
             </div>
             <div>
               <h2 className="text-xl font-extrabold tracking-tight text-slate-950">
-                Welcome to RizqFlow
+                Welcome to RizqWise
               </h2>
               <p className="text-xs font-semibold text-amber-950/80">
                 Know where your money goes • Step {step} of 4
@@ -355,7 +355,7 @@ export function OnboardingWizard() {
                   onClick={handleFinish}
                   className="px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold text-sm shadow-md transition-all flex items-center gap-2"
                 >
-                  Launch RizqFlow Dashboard <ArrowRight className="w-4 h-4" />
+                  Launch RizqWise Dashboard <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>

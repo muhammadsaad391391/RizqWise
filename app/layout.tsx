@@ -4,7 +4,7 @@ import { FinanceProvider } from '@/lib/context/finance-context';
 import { AppLayout } from '@/components/layout/app-layout';
 
 export const metadata: Metadata = {
-  title: 'RizqFlow — Know where your money goes',
+  title: 'RizqWise — Know where your money goes',
   description: 'A Modern Islamic-Inspired Personal Finance Management and Fund Allocation Application',
   icons: {
     icon: '/favicon.ico',

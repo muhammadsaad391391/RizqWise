@@ -64,7 +64,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Coins className="w-6 h-6 stroke-[2.2]" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">RizqFlow</h1>
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">RizqWise</h1>
             <p className="text-[11px] font-medium text-slate-500 tracking-tight">
               Know where your money goes.
             </p>
@@ -134,7 +134,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <div className="w-8 h-8 rounded-lg bg-slate-950 text-amber-400 flex items-center justify-center font-bold">
                   <Coins className="w-4 h-4" />
                 </div>
-                <span className="font-extrabold text-lg text-slate-950 tracking-tight">RizqFlow</span>
+                <span className="font-extrabold text-lg text-slate-950 tracking-tight">RizqWise</span>
               </div>
               <div className="hidden md:block">
                 <span className="text-xs uppercase font-bold tracking-wider text-slate-400">
@@ -152,6 +152,26 @@ export function AppLayout({ children }: AppLayoutProps) {
 
             {/* Right: Month Selector & Quick Actions */}
             <div className="flex items-center gap-2">
+              {/* Cloud Sync Status Indicator */}
+              {settings.cloudSyncEnabled ? (
+                <Link
+                  href="/settings"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200/80 hover:bg-emerald-100 transition-colors shadow-2xs"
+                  title="Multi-device Cloud Sync is active"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="hidden sm:inline">Cloud Synced</span>
+                </Link>
+              ) : (
+                <Link
+                  href="/settings"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-50/80 text-amber-900 text-xs font-semibold border border-amber-200 hover:bg-amber-100 transition-colors shadow-2xs"
+                  title="Connect database to sync across your phone and laptop"
+                >
+                  <span className="text-xs">☁️</span>
+                  <span className="hidden sm:inline">Sync Devices</span>
+                </Link>
+              )}
               <div className="flex items-center bg-black/10 md:bg-slate-100 rounded-xl p-1 text-slate-900">
                 <button
                   type="button"

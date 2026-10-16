@@ -153,7 +153,7 @@ export const PAYMENT_METHODS = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  appName: 'RizqFlow',
+  appName: 'RizqWise',
   tagline: 'Know where your money goes.',
   currency: 'PKR',
   currencySymbol: 'Rs.',

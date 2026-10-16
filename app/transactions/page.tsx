@@ -236,7 +236,7 @@ export default function TransactionsPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `RizqFlow_Transactions_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.setAttribute('download', `RizqWise_Transactions_${format(new Date(), 'yyyy-MM-dd')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

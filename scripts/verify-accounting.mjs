@@ -1,4 +1,4 @@
-// Verification script for RizqFlow Financial Accounting Engine
+// Verification script for RizqWise Financial Accounting Engine
 import assert from 'assert';
 
 // 1. Initial 7 Funds Setup (Investments 20%, Business 40%, Personal 15%, Savings 10%, Education 5%, Emergency 5%, Other 5%)

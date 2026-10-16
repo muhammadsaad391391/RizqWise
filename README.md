@@ -1,10 +1,10 @@
-# RizqFlow — A Modern Islamic-Inspired Personal Finance Management App
+# RizqWise — A Modern Islamic-Inspired Personal Finance Management App
 
 > **Tagline:** *Know where your money goes.*
 
-**RizqFlow** is a modern, responsive financial management and fund allocation web application built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**.
+**RizqWise** is a modern, responsive financial management and fund allocation web application built with **Next.js (App Router)**, **TypeScript**, and **Tailwind CSS**.
 
-Inspired by clean money-tracking workflows and premium fintech aesthetics, RizqFlow replaces basic expense trackers with an intelligent fund distribution system that automatically divides every rupee of incoming wealth into designated personal and business funds according to predefined percentage rules.
+Inspired by clean money-tracking workflows and premium fintech aesthetics, RizqWise replaces basic expense trackers with an intelligent fund distribution system that automatically divides every rupee of incoming wealth into designated personal and business funds according to predefined percentage rules.
 
 ---
 
@@ -18,11 +18,12 @@ Inspired by clean money-tracking workflows and premium fintech aesthetics, RizqF
 - **Immutable Historical Snapshots**: Changing future allocation rules will never alter past transaction distribution records.
 - **No Double-Counting**: Income is recorded once; fund allocations are distributions of that income, not additional money.
 
-### 2. 🛡️ Expense Tracking with Fund Protection
+### 2. 🛡️ Expense & Income Tracking with Custom Categories
 - **Fund Deduction**: Every expense is charged against a specific fund (e.g., software subscription deducted from the Business fund).
 - **Available Balance Check**: Shows current fund balance before saving.
 - **Overdraft Protection**: Configurable policy (warn & confirm vs. block) to prevent accidental negative balances.
-- **Expense Categories**: Clean icon grid inspired by mobile money trackers (Food, Transportation, Shopping, Education, Software, Tools, Health, Clothing, Charity/Sadaqah, Halal Dining, and custom user categories).
+- **On-the-Fly Category Creator**: Add custom categories directly inside the transaction modal with the `+ New Category` button for both Income and Expenses.
+- **Expense & Income Categories**: Food, Groceries, Fuel, Gym, Shopping, Education, Software, Tools, Health, Clothing, Charity/Sadaqah, Salary, Freelancing, Business Revenue, Pocket Money, and custom categories with icons.
 
 ### 3. ⇄ Inter-Fund Transfers
 - Move money between funds (e.g. PKR 5,000 from Business to Investments).
@@ -36,8 +37,10 @@ Inspired by clean money-tracking workflows and premium fintech aesthetics, RizqF
 - **Printable Financial Summary**: Clean one-click print mode for paper/PDF reports.
 - **CSV Data Export**: Export filtered transaction ledgers directly to `.csv`.
 
-### 5. 💾 Dual-Layer Persistence & Cloud Ready
-- **Persistent Local Database**: Automatically writes to `data/rizqflow-db.json` on the server filesystem via `/api/data` and synchronizes with browser `localStorage`.
+### 5. ☁️ Multi-Device Cloud Sync & Database
+- **Automatic Cross-Device Sync**: Connects to Supabase PostgreSQL cloud database so your phone, tablet, laptop, and desktop stay 100% synchronized in real time.
+- **Tab Focus Auto-Refresh**: When unlocking your phone or switching tabs on your laptop, the app automatically checks for cloud updates.
+- **Persistent Local Database**: Automatically writes to `data/rizqwise-db.json` on the server filesystem and synchronizes with browser `localStorage`.
 - **Complete JSON Backup & Restore**: Download full JSON backups or restore snapshots at any time.
 - **Supabase Cloud Ready**: Includes full PostgreSQL schema with Row-Level Security (`supabase/schema.sql`).
 
@@ -46,7 +49,7 @@ Inspired by clean money-tracking workflows and premium fintech aesthetics, RizqF
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js `v18+` or `v20+` (tested on Node.js `v24.13.1`)
+- Node.js `v18+` or `v20+`
 - npm `v9+`
 
 ### Installation & Local Run
@@ -95,24 +98,32 @@ All 12 automated checks test:
 
 ---
 
-## ☁️ Connecting Supabase (Optional Persistent Cloud Mode)
+## ☁️ Cross-Device Cloud Sync (Supabase)
 
-To deploy with Supabase PostgreSQL cloud storage:
+To sync your data automatically across all devices (mobile phone, laptop, desktop):
 
-1. Create a project on [supabase.com](https://supabase.com).
-2. Go to the **SQL Editor** tab in your Supabase dashboard.
-3. Open and run [`supabase/schema.sql`](supabase/schema.sql).
-4. Create a `.env.local` file in the project root:
-   ```env
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+1. Create a free account at [supabase.com](https://supabase.com) and create a project.
+2. In the Supabase **SQL Editor**, run the script from [`supabase/schema.sql`](supabase/schema.sql):
+   ```sql
+   CREATE TABLE IF NOT EXISTS public.rizqwise_sync (
+       id TEXT PRIMARY KEY DEFAULT 'primary_sync',
+       data JSONB NOT NULL DEFAULT '{}'::jsonb,
+       updated_at TIMESTAMPTZ DEFAULT NOW()
+   );
+   ALTER TABLE public.rizqwise_sync ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY "Allow public sync access" ON public.rizqwise_sync FOR ALL USING (true) WITH CHECK (true);
    ```
-5. Deploy to Vercel or your hosting platform of choice with standard Next.js deployment.
+3. Copy your **Project URL** and **Anon Key** from Supabase (**Project Settings → API**).
+4. Add them to Vercel Environment Variables (or in Settings in the app):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+5. Now, every device that visits the app will automatically sync in real time.
 
 ---
 
 ## 🎨 Visual Design System
 
+- **Brand Name**: RizqWise
 - **Primary Brand Accent**: Warm yellow/gold (`#F7C948` / `#F59E0B`) inspired by mobile financial tracking apps.
 - **Background**: Soft warm off-white (`#FBFBFA`).
 - **Typography**: Clean modern sans-serif.

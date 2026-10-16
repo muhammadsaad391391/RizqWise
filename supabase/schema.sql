@@ -1,19 +1,31 @@
 -- =========================================================================
--- RizqFlow — Database Schema for Supabase (PostgreSQL)
+-- RizqWise — Database Schema for Supabase (PostgreSQL)
 -- =========================================================================
 
 -- 1. UNIFIED REALTIME SYNC TABLE (Easiest & Fastest for Cross-Device Sync)
--- This table syncs all your funds, transactions, categories, and settings across devices.
-CREATE TABLE IF NOT EXISTS public.rizqflow_sync (
+-- This table syncs all your funds, transactions, categories, and settings across all devices.
+CREATE TABLE IF NOT EXISTS public.rizqwise_sync (
     id TEXT PRIMARY KEY DEFAULT 'primary_sync',
     data JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable RLS and public access (or link with Supabase auth)
-ALTER TABLE public.rizqflow_sync ENABLE ROW LEVEL SECURITY;
+-- Enable RLS and public access with anon key
+ALTER TABLE public.rizqwise_sync ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow full access for authenticated and anon users with key"
+    ON public.rizqwise_sync FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+-- Legacy alias table if migrating from earlier setup
+CREATE TABLE IF NOT EXISTS public.rizqflow_sync (
+    id TEXT PRIMARY KEY DEFAULT 'primary_sync',
+    data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.rizqflow_sync ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow full access for legacy table"
     ON public.rizqflow_sync FOR ALL
     USING (true)
     WITH CHECK (true);
