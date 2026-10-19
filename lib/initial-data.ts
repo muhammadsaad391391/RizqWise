@@ -167,4 +167,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   isPasswordProtected: typeof process !== 'undefined' && Boolean(process.env.NEXT_PUBLIC_APP_PASSWORD),
   appPassword: typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_APP_PASSWORD || '' : '',
   autoLockMinutes: 0,
+  customStats: [
+    {
+      id: 'stat-business',
+      name: 'Available for Business',
+      fundIds: ['fund-investments', 'fund-business'],
+      icon: 'Briefcase',
+      color: '#0284C7',
+    },
+  ],
 };

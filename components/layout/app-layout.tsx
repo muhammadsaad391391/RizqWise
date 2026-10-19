@@ -150,8 +150,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-8">
-        {/* TOP HEADER (Yellow on mobile inspired by reference app, sleek bar on desktop) */}
-        <header className="bg-brand-header md:bg-white border-b border-amber-300/40 md:border-slate-200/80 px-4 py-3 md:py-4 sticky top-0 z-30 shadow-sm md:shadow-none">
+        {/* TOP HEADER (Yellow on mobile with safe camera clearance, sleek bar on desktop) */}
+        <header className="bg-brand-header md:bg-white border-b border-amber-300/40 md:border-slate-200/80 px-4 pt-7 pb-3 sm:pt-4 md:py-4 sticky top-0 z-30 shadow-sm md:shadow-none">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             {/* Left: Mobile Title or Desktop Page context */}
             <div className="flex items-center gap-3">
@@ -175,7 +175,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </div>
             </div>
 
-            {/* Right: Month Selector & Quick Actions */}
+            {/* Right: Month Selector, Quick Actions, Settings & Lock */}
             <div className="flex items-center gap-2">
               {/* Cloud Sync Status Indicator */}
               {settings.cloudSyncEnabled ? (
@@ -197,6 +197,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <span className="hidden sm:inline">Sync Devices</span>
                 </Link>
               )}
+
               <div className="flex items-center bg-black/10 md:bg-slate-100 rounded-xl p-1 text-slate-900">
                 <button
                   type="button"
@@ -220,8 +221,23 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </button>
               </div>
 
+              {/* Settings Button (Always accessible on Mobile and Desktop!) */}
+              <Link
+                href="/settings"
+                className={`p-2 rounded-xl transition-colors flex items-center gap-1.5 ${
+                  pathname === '/settings'
+                    ? 'bg-black/20 md:bg-amber-100 text-slate-950 font-bold'
+                    : 'bg-black/10 md:bg-slate-100 hover:bg-black/15 md:hover:bg-slate-200 text-slate-800'
+                }`}
+                title="Settings & Customization"
+                aria-label="Settings"
+              >
+                <Settings className="w-4 h-4 text-slate-800" />
+                <span className="hidden lg:inline text-xs font-bold">Settings</span>
+              </Link>
+
               {/* Desktop Direct Action Buttons */}
-              <div className="hidden sm:flex items-center gap-2 ml-2">
+              <div className="hidden sm:flex items-center gap-2 ml-1">
                 <button
                   type="button"
                   onClick={() => handleOpenAdd('income')}

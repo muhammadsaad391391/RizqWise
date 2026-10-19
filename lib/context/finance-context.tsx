@@ -11,6 +11,7 @@ import {
   AppSettings,
   DashboardSummary,
   FundAllocationSnapshot,
+  CustomStatMetric,
 } from '@/types/finance';
 import { DEFAULT_FUNDS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS } from '@/lib/initial-data';
 import {
@@ -90,6 +91,10 @@ interface FinanceContextType {
   lockAccount: () => void;
   setPassword: (password: string) => void;
   removePassword: () => void;
+  customStats: CustomStatMetric[];
+  addCustomStat: (stat: Omit<CustomStatMetric, 'id'>) => { success: boolean; error?: string };
+  updateCustomStat: (id: string, stat: Partial<CustomStatMetric>) => { success: boolean; error?: string };
+  deleteCustomStat: (id: string) => { success: boolean };
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -1035,6 +1040,41 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [settings, funds, transactions, categories, persistState]
   );
 
+  // Custom Combined Stats Management
+  const addCustomStat = useCallback(
+    (stat: Omit<CustomStatMetric, 'id'>) => {
+      const newStat: CustomStatMetric = {
+        ...stat,
+        id: `stat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      };
+      const current = settings.customStats || [];
+      const nextStats = [...current, newStat];
+      updateSettings({ customStats: nextStats });
+      return { success: true };
+    },
+    [settings.customStats, updateSettings]
+  );
+
+  const updateCustomStat = useCallback(
+    (id: string, updated: Partial<CustomStatMetric>) => {
+      const current = settings.customStats || [];
+      const nextStats = current.map((s) => (s.id === id ? { ...s, ...updated } : s));
+      updateSettings({ customStats: nextStats });
+      return { success: true };
+    },
+    [settings.customStats, updateSettings]
+  );
+
+  const deleteCustomStat = useCallback(
+    (id: string) => {
+      const current = settings.customStats || [];
+      const nextStats = current.filter((s) => s.id !== id);
+      updateSettings({ customStats: nextStats });
+      return { success: true };
+    },
+    [settings.customStats, updateSettings]
+  );
+
   // Import Full Data
   const importData = useCallback(
     (data: { funds?: Fund[]; transactions?: Transaction[]; categories?: Category[]; settings?: AppSettings }) => {
@@ -1191,6 +1231,10 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         lockAccount,
         setPassword,
         removePassword,
+        customStats: settings.customStats || [],
+        addCustomStat,
+        updateCustomStat,
+        deleteCustomStat,
       }}
     >
       {children}

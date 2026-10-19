@@ -6,8 +6,9 @@ import { useFinance } from '@/lib/context/finance-context';
 import { formatCurrency } from '@/lib/finance-engine';
 import { IconRenderer } from '@/components/common/icon-renderer';
 import { TransactionModal } from '@/components/modals/transaction-modal';
+import { CustomStatModal } from '@/components/modals/custom-stat-modal';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
-import { Transaction, IncomeTransaction, ExpenseTransaction, TransferTransaction } from '@/types/finance';
+import { Transaction, IncomeTransaction, ExpenseTransaction, TransferTransaction, CustomStatMetric } from '@/types/finance';
 import {
   Wallet,
   ArrowRightLeft,
@@ -33,12 +34,19 @@ import {
 import { format, parseISO } from 'date-fns';
 
 export default function DashboardPage() {
-  const { funds, transactions, categories, settings, summary, selectedMonth, deleteTransaction } = useFinance();
+  const { funds, transactions, categories, settings, summary, selectedMonth, deleteTransaction, customStats } = useFinance();
   const [mounted, setMounted] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [dashboardTab, setDashboardTab] = useState<'ledger' | 'charts'>('ledger');
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [isStatModalOpen, setIsStatModalOpen] = useState(false);
+  const [editingStat, setEditingStat] = useState<CustomStatMetric | null>(null);
+
+  const openStatModal = (stat?: CustomStatMetric | null) => {
+    setEditingStat(stat || null);
+    setIsStatModalOpen(true);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -146,6 +154,91 @@ export default function DashboardPage() {
               <span>Transfer</span>
             </button>
           </div>
+        </div>
+
+        {/* CUSTOM COMBINED STATS (e.g. "Available for Business: Investments + Business", "Available to Spend") */}
+        <div className="pt-4 mt-4 border-t border-slate-100">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <span>Combined Balances</span>
+              {customStats.length > 0 && (
+                <span className="text-[10px] font-semibold text-slate-400">({customStats.length})</span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => openStatModal(null)}
+              className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-200/60 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Add Stat</span>
+            </button>
+          </div>
+
+          {customStats.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {customStats.map((stat) => {
+                const combinedBalance = stat.fundIds.reduce((sum, fid) => {
+                  const calc = summary.fundCalculations[fid];
+                  return sum + (calc?.currentBalance ?? 0);
+                }, 0);
+
+                const includedFunds = stat.fundIds
+                  .map((fid) => funds.find((f) => f.id === fid))
+                  .filter(Boolean) as typeof funds;
+
+                return (
+                  <div
+                    key={stat.id}
+                    onClick={() => openStatModal(stat)}
+                    className="p-3 sm:p-3.5 rounded-2xl bg-slate-50/70 hover:bg-amber-50/60 border border-slate-200/70 hover:border-amber-300 transition-all cursor-pointer group flex items-center justify-between gap-3 shadow-2xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs shrink-0 shadow-xs"
+                          style={{ backgroundColor: stat.color || '#0284C7' }}
+                        >
+                          <IconRenderer name={stat.icon || 'Briefcase'} className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-slate-800 truncate block group-hover:text-amber-800 transition-colors">
+                            {stat.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 truncate block mt-0.5">
+                            {includedFunds.map((f) => f.name).join(' + ')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className="text-sm sm:text-base font-black text-slate-900 group-hover:text-amber-950 transition-colors">
+                        {formatCurrency(combinedBalance, settings)}
+                      </div>
+                      <span className="text-[9px] font-semibold text-slate-400 group-hover:text-amber-700 flex items-center justify-end gap-0.5">
+                        Edit <ChevronRight className="w-2.5 h-2.5" />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-3 rounded-2xl bg-slate-50/80 border border-dashed border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="text-xs text-slate-500">
+                Combine two or more funds (e.g. <strong>Available for Business</strong> = Investments + Business, or <strong>Available to Spend</strong> = Personal + Brother)
+              </div>
+              <button
+                type="button"
+                onClick={() => openStatModal(null)}
+                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 transition-colors shrink-0 flex items-center justify-center gap-1 shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Combine Funds Now</span>
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -493,6 +586,16 @@ export default function DashboardPage() {
         }}
         initialType={modalType}
         transactionToEdit={editingTx}
+      />
+
+      {/* Custom Combined Stat Modal */}
+      <CustomStatModal
+        isOpen={isStatModalOpen}
+        onClose={() => {
+          setIsStatModalOpen(false);
+          setEditingStat(null);
+        }}
+        initialStat={editingStat}
       />
     </div>
   );

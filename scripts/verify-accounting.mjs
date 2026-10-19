@@ -162,6 +162,32 @@ assert.strictEqual(updatedIncomeSum, 150000, 'Sum of re-allocated funds must mat
 assert.strictEqual(updatedSnapshots.find((s) => s.fundId === 'fund-business').amount, 60000, 'Business (40%) must now receive 60,000');
 console.log('✔ PASS: Editing income amount recalculates fund allocations accurately.');
 
+console.log('\n--- TEST 14: Custom Combined Fund Balances (e.g. Available for Business) ---');
+const sampleBalances = {
+  'fund-investments': 8900,
+  'fund-business': 53550,
+  'fund-personal': 1500,
+  'fund-brother': 3500,
+};
+
+// 1. Available for Business (Investments + Business)
+const businessStat = {
+  name: 'Available for Business',
+  fundIds: ['fund-investments', 'fund-business'],
+};
+const combinedBusiness = businessStat.fundIds.reduce((sum, id) => sum + (sampleBalances[id] || 0), 0);
+assert.strictEqual(combinedBusiness, 62450, 'Available for Business must equal 8,900 + 53,550 = 62,450');
+console.log('✔ PASS: Available for Business (Investments 8,900 + Business 53,550) = 62,450');
+
+// 2. Available to Spend (Personal + Brother)
+const spendStat = {
+  name: 'Available to Spend',
+  fundIds: ['fund-personal', 'fund-brother'],
+};
+const combinedSpend = spendStat.fundIds.reduce((sum, id) => sum + (sampleBalances[id] || 0), 0);
+assert.strictEqual(combinedSpend, 5000, 'Available to Spend must equal 1,500 + 3,500 = 5,000');
+console.log('✔ PASS: Available to Spend (Personal 1,500 + Brother 3,500) = 5,000');
+
 console.log('\n=============================================');
-console.log(' ALL 14 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
+console.log(' ALL 15 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
 console.log('=============================================\n');

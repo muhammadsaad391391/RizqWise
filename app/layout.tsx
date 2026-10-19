@@ -1,7 +1,14 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { FinanceProvider } from '@/lib/context/finance-context';
 import { AppLayout } from '@/components/layout/app-layout';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#F59E0B',
+};
 
 export const metadata: Metadata = {
   title: 'RizqWise — Know where your money goes',

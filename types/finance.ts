@@ -74,6 +74,15 @@ export interface Category {
   isCustom?: boolean;
 }
 
+export interface CustomStatMetric {
+  id: string;
+  name: string; // e.g. "Available for Business", "Available to Spend"
+  fundIds: string[]; // e.g. ['fund-investments', 'fund-business']
+  icon?: string;
+  color?: string;
+  description?: string;
+}
+
 export interface AppSettings {
   appName: string;
   tagline: string;
@@ -93,6 +102,8 @@ export interface AppSettings {
   isPasswordProtected?: boolean;
   appPassword?: string;
   autoLockMinutes?: number;
+  // Custom Combined Stats
+  customStats?: CustomStatMetric[];
 }
 
 export interface FundCalculations {
