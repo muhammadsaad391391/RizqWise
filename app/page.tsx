@@ -21,6 +21,7 @@ import {
   BarChart2,
   ListOrdered,
   Plus,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -119,9 +120,17 @@ export default function DashboardPage() {
       <section className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-soft">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Total Available Wealth
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Total Available Wealth
+              </span>
+              {summary.totalDeficit > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                  <AlertTriangle className="w-3 h-3 text-rose-500" />
+                  Deficit: -{formatCurrency(summary.totalDeficit, settings)}
+                </span>
+              )}
+            </div>
             <div className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-1">
               {formatCurrency(summary.totalBalance, settings)}
             </div>
@@ -241,6 +250,86 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
+
+      {/* CATEGORY DEFICITS / DEBITS ALERT BANNER */}
+      {summary.totalDeficit > 0 && (
+        <section className="bg-rose-50/80 border border-rose-200/90 rounded-3xl p-4 sm:p-5 shadow-2xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm sm:text-base font-extrabold text-rose-950">
+                    Category Deficits &amp; Debits
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-200 text-rose-900">
+                    {summary.deficitFunds.length} {summary.deficitFunds.length === 1 ? 'category overspent' : 'categories overspent'}
+                  </span>
+                </div>
+                <p className="text-xs text-rose-700 mt-0.5">
+                  Total deficit of <span className="font-black text-rose-950">{formatCurrency(summary.totalDeficit, settings)}</span>. You can clear it automatically from spendable funds when adding income, or settle via transfer.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => openModal('income')}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-colors flex items-center gap-1.5"
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>Clear via Income</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openModal('transfer')}
+                className="px-3 py-2 text-xs font-semibold rounded-xl bg-white hover:bg-rose-100/70 border border-rose-200 text-rose-900 transition-colors flex items-center gap-1.5"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>Settle via Transfer</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            {summary.deficitFunds.map((df) => (
+              <Link
+                key={df.fundId}
+                href={`/funds/${df.fundId}`}
+                className="p-3 rounded-2xl bg-white/95 hover:bg-white border border-rose-200 hover:border-rose-300 transition-all flex items-center justify-between gap-3 shadow-2xs group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs shrink-0"
+                    style={{ backgroundColor: df.color || '#EF4444' }}
+                  >
+                    <IconRenderer name={df.icon || 'AlertTriangle'} className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-slate-900 truncate block group-hover:text-rose-700">
+                      {df.fundName}
+                    </span>
+                    <span className="text-[10px] font-semibold text-rose-600 block">
+                      Negative balance
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-xs sm:text-sm font-black text-rose-600 block">
+                    -{formatCurrency(df.deficitAmount, settings)}
+                  </span>
+                  <span className="text-[10px] text-slate-400 flex items-center justify-end gap-0.5 group-hover:text-rose-700">
+                    View <ChevronRight className="w-2.5 h-2.5" />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* MY FUNDS - Simple, Clean, Non-rushy Cards */}
       <section className="space-y-3">

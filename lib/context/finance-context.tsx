@@ -458,7 +458,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             error: `Cannot automatically allocate: ${validation.message}`,
           };
         }
-        allocations = calculateAllocations(amount, funds);
+        allocations = customAllocations && customAllocations.length > 0
+          ? customAllocations
+          : calculateAllocations(amount, funds);
       } else if (allocationMethod === 'manual') {
         if (!customAllocations || customAllocations.length === 0) {
           return { success: false, error: 'Please specify allocation amounts for funds.' };

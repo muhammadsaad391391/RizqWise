@@ -8,6 +8,7 @@ import {
   FundCalculations,
   DashboardSummary,
   AppSettings,
+  DeficitFundInfo,
 } from '@/types/finance';
 import { parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -57,6 +58,111 @@ export function calculateAllocations(
   }
 
   return snapshots;
+}
+
+/**
+ * Calculates allocations for an income amount with automatic deficit clearance.
+ * When a fund has a negative balance (deficit), that deficit can be routed
+ * to replenish the indebted fund(s), deducting the same amount from the user's
+ * chosen spendable fund(s) (e.g. Personal Expenses & Brother).
+ */
+export function calculateAllocationsWithDeficitAdjustment(
+  amount: number,
+  funds: Fund[],
+  deficitFunds: DeficitFundInfo[],
+  spendableFundIds: string[]
+): {
+  snapshots: FundAllocationSnapshot[];
+  totalDeficitCleared: number;
+  clearedPerFund: Record<string, number>;
+  deductedPerSpendableFund: Record<string, number>;
+} {
+  const baseSnapshots = calculateAllocations(amount, funds);
+  const clearedPerFund: Record<string, number> = {};
+  const deductedPerSpendableFund: Record<string, number> = {};
+
+  if (!deficitFunds || deficitFunds.length === 0 || !spendableFundIds || spendableFundIds.length === 0) {
+    return {
+      snapshots: baseSnapshots,
+      totalDeficitCleared: 0,
+      clearedPerFund,
+      deductedPerSpendableFund,
+    };
+  }
+
+  // Filter spendable funds that are active and have positive baseline allocation from this income
+  const spendableSnapshots = baseSnapshots.filter((s) => spendableFundIds.includes(s.fundId));
+  const totalSpendableAllocated = spendableSnapshots.reduce((sum, s) => sum + s.amount, 0);
+
+  if (totalSpendableAllocated <= 0) {
+    return {
+      snapshots: baseSnapshots,
+      totalDeficitCleared: 0,
+      clearedPerFund,
+      deductedPerSpendableFund,
+    };
+  }
+
+  // Total deficit to clear across deficit funds
+  const totalDeficitNeeded = deficitFunds.reduce((sum, d) => sum + d.deficitAmount, 0);
+  // Cap at what spendable funds can absorb
+  const totalToClear = Math.round(Math.min(totalDeficitNeeded, totalSpendableAllocated) * 100) / 100;
+
+  if (totalToClear <= 0) {
+    return {
+      snapshots: baseSnapshots,
+      totalDeficitCleared: 0,
+      clearedPerFund,
+      deductedPerSpendableFund,
+    };
+  }
+
+  // Distribute clearance amount across deficit funds
+  let remainingClearance = totalToClear;
+  for (let i = 0; i < deficitFunds.length; i++) {
+    const d = deficitFunds[i];
+    const canClearForFund = Math.min(d.deficitAmount, remainingClearance);
+    clearedPerFund[d.fundId] = Math.round(canClearForFund * 100) / 100;
+    remainingClearance = Math.round((remainingClearance - canClearForFund) * 100) / 100;
+  }
+
+  // Distribute deduction across selected spendable funds proportionally
+  let remainingDeduction = totalToClear;
+  for (let i = 0; i < spendableSnapshots.length; i++) {
+    const s = spendableSnapshots[i];
+    const isLast = i === spendableSnapshots.length - 1;
+    let share = 0;
+    if (isLast) {
+      share = remainingDeduction;
+    } else {
+      const proportion = s.amount / totalSpendableAllocated;
+      share = Math.min(s.amount, Math.round(totalToClear * proportion * 100) / 100);
+    }
+    deductedPerSpendableFund[s.fundId] = share;
+    remainingDeduction = Math.round((remainingDeduction - share) * 100) / 100;
+  }
+
+  // Apply adjustments to snapshots
+  const adjustedSnapshots = baseSnapshots.map((snapshot) => {
+    let newAmount = snapshot.amount;
+    if (clearedPerFund[snapshot.fundId]) {
+      newAmount += clearedPerFund[snapshot.fundId];
+    }
+    if (deductedPerSpendableFund[snapshot.fundId]) {
+      newAmount -= deductedPerSpendableFund[snapshot.fundId];
+    }
+    return {
+      ...snapshot,
+      amount: Math.round(newAmount * 100) / 100,
+    };
+  });
+
+  return {
+    snapshots: adjustedSnapshots,
+    totalDeficitCleared: totalToClear,
+    clearedPerFund,
+    deductedPerSpendableFund,
+  };
 }
 
 /**
@@ -194,8 +300,12 @@ export function calculateFinancialSummary(
     }
   }
 
-  // Calculate budgets and round numbers
+  // Calculate budgets, deficits, and round numbers
   let totalBalance = 0;
+  let totalDeficit = 0;
+  let positiveWealth = 0;
+  const deficitFunds: DeficitFundInfo[] = [];
+
   for (const fund of funds) {
     const calc = calculations[fund.id];
     calc.currentBalance = Math.round(calc.currentBalance * 100) / 100;
@@ -217,6 +327,20 @@ export function calculateFinancialSummary(
 
     if (!fund.isArchived) {
       totalBalance += calc.currentBalance;
+      if (calc.currentBalance < 0) {
+        const def = Math.abs(calc.currentBalance);
+        totalDeficit += def;
+        deficitFunds.push({
+          fundId: fund.id,
+          fundName: fund.name,
+          deficitAmount: def,
+          currentBalance: calc.currentBalance,
+          color: fund.color,
+          icon: fund.icon,
+        });
+      } else {
+        positiveWealth += calc.currentBalance;
+      }
     }
 
     if (calc.monthlyBudget && calc.monthlyBudget > 0) {
@@ -232,6 +356,9 @@ export function calculateFinancialSummary(
     periodAllocated: Math.round(periodAllocated * 100) / 100,
     netSavings: Math.round((periodIncome - periodExpenses) * 100) / 100,
     fundCalculations: calculations,
+    totalDeficit: Math.round(totalDeficit * 100) / 100,
+    deficitFunds,
+    netAvailableWealth: Math.round((positiveWealth - totalDeficit) * 100) / 100,
   };
 }
 

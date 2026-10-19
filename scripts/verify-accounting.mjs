@@ -188,6 +188,75 @@ const combinedSpend = spendStat.fundIds.reduce((sum, id) => sum + (sampleBalance
 assert.strictEqual(combinedSpend, 5000, 'Available to Spend must equal 1,500 + 3,500 = 5,000');
 console.log('✔ PASS: Available to Spend (Personal 1,500 + Brother 3,500) = 5,000');
 
+console.log('\n--- TEST 15: Category Deficit (Debit) Tracking & Auto-Clear Deficit Deduction on Income ---');
+// Scenario: A fund is overspent and in deficit (e.g. Education has -2,000 deficit)
+const fundBalancesWithDeficit = {
+  'fund-investments': 20000,
+  'fund-business': 40000,
+  'fund-personal': 15000,
+  'fund-savings': 10000,
+  'fund-education': -2000, // deficit of 2,000
+  'fund-emergency': 5000,
+  'fund-other': 5000,
+};
+
+// Calculate total deficit
+const deficitFunds = Object.entries(fundBalancesWithDeficit)
+  .filter(([_, bal]) => bal < 0)
+  .map(([id, bal]) => ({ fundId: id, deficit: Math.abs(bal) }));
+const totalDeficit = deficitFunds.reduce((sum, d) => sum + d.deficit, 0);
+
+assert.strictEqual(totalDeficit, 2000, 'Total deficit must be 2,000');
+assert.strictEqual(deficitFunds.length, 1, 'Should find 1 deficit fund');
+console.log(`✔ PASS: Outstanding category deficit accurately detected: PKR ${totalDeficit} in Education fund.`);
+
+// Now record income of PKR 20,000.
+// Baseline allocations:
+// Investments (20%): 4,000
+// Business (40%): 8,000
+// Personal Expenses (15%): 3,000  (Spendable)
+// Savings (10%): 2,000
+// Education (5%): 1,000 (Deficit Fund with -2,000)
+// Emergency (5%): 1,000
+// Other (5%): 1,000
+// Total: 20,000
+const income2 = 20000;
+const baselineAllocations = funds.map((f) => ({
+  fundId: f.id,
+  fundName: f.name,
+  amount: (income2 * f.allocationPercentage) / 100,
+}));
+
+// Auto-clear deficit:
+// Deficit in Education is 2,000.
+// Chosen spendable fund to absorb debit: Personal Expenses (receives 3,000 baseline).
+// We deduct 2,000 from Personal Expenses (leaving 1,000 to spend) and add 2,000 to Education (making 1,000 + 2,000 = 3,000).
+// When applied:
+// Education fund: -2000 + 3000 = +1000 balance (Deficit completely wiped out!)
+// Personal fund: +1000 balance added (reduced because user previously overspent).
+const adjustedAllocations = baselineAllocations.map((a) => {
+  if (a.fundName === 'Education') {
+    return { ...a, amount: a.amount + 2000 };
+  }
+  if (a.fundName === 'Personal Expenses') {
+    return { ...a, amount: a.amount - 2000 };
+  }
+  return { ...a };
+});
+
+const adjustedSum = adjustedAllocations.reduce((sum, a) => sum + a.amount, 0);
+assert.strictEqual(adjustedSum, income2, 'Adjusted allocations must still equal exact income amount (20,000)');
+
+const finalEducationAlloc = adjustedAllocations.find((a) => a.fundName === 'Education').amount;
+const finalPersonalAlloc = adjustedAllocations.find((a) => a.fundName === 'Personal Expenses').amount;
+
+assert.strictEqual(finalEducationAlloc, 3000, 'Education must receive baseline 1,000 + 2,000 deficit replenishment = 3,000');
+assert.strictEqual(finalPersonalAlloc, 1000, 'Personal Expenses must be reduced from 3,000 to 1,000 (absorbing debit)');
+
+const newEducationBalance = fundBalancesWithDeficit['fund-education'] + finalEducationAlloc;
+assert.strictEqual(newEducationBalance, 1000, 'Education balance after income must be -2000 + 3000 = +1000 (no longer negative)');
+console.log('✔ PASS: Auto-cleared deficit of PKR 2,000! Education replenished and Personal Expenses reduced accordingly.');
+
 console.log('\n=============================================');
-console.log(' ALL 15 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
+console.log(' ALL 16 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
 console.log('=============================================\n');

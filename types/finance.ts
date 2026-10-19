@@ -129,6 +129,15 @@ export interface FundCalculations {
   isReconciled: boolean;
 }
 
+export interface DeficitFundInfo {
+  fundId: string;
+  fundName: string;
+  deficitAmount: number;
+  currentBalance: number;
+  color?: string;
+  icon?: string;
+}
+
 export interface DashboardSummary {
   totalBalance: number;
   periodIncome: number;
@@ -136,4 +145,7 @@ export interface DashboardSummary {
   periodAllocated: number;
   netSavings: number;
   fundCalculations: Record<string, FundCalculations>;
+  totalDeficit: number;
+  deficitFunds: DeficitFundInfo[];
+  netAvailableWealth: number;
 }

@@ -3,7 +3,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useFinance } from '@/lib/context/finance-context';
 import { IconRenderer } from '@/components/common/icon-renderer';
-import { formatCurrency, calculateAllocations, validateAllocationRules } from '@/lib/finance-engine';
+import {
+  formatCurrency,
+  calculateAllocations,
+  calculateAllocationsWithDeficitAdjustment,
+  validateAllocationRules,
+} from '@/lib/finance-engine';
 import { INCOME_SOURCES, PAYMENT_METHODS } from '@/lib/initial-data';
 import {
   FundAllocationSnapshot,
@@ -77,6 +82,8 @@ export function TransactionModal({
   const [incomeSource, setIncomeSource] = useState('Salary');
   const [allocationMethod, setAllocationMethod] = useState<'automatic' | 'manual' | 'none'>('automatic');
   const [manualAllocations, setManualAllocations] = useState<Record<string, number>>({});
+  const [autoClearDeficit, setAutoClearDeficit] = useState(true);
+  const [spendableFundIds, setSpendableFundIds] = useState<string[]>([]);
 
   // Transfer Fields
   const [fromFundId, setFromFundId] = useState('');
@@ -165,8 +172,33 @@ export function TransactionModal({
           setIncomeSource(incCats[0].name);
         }
       }
+
+      // Initialize spendable funds (Personal, Brother, Spend, Pocket, Mine, etc.)
+      const matching = funds
+        .filter((f) => !f.isArchived)
+        .filter((f) => {
+          const n = f.name.toLowerCase();
+          return (
+            n.includes('personal') ||
+            n.includes('brother') ||
+            n.includes('spend') ||
+            n.includes('pocket') ||
+            n.includes('mine')
+          );
+        })
+        .map((f) => f.id);
+
+      if (matching.length > 0) {
+        setSpendableFundIds(matching);
+      } else {
+        const nonDeficit = funds
+          .filter((f) => !f.isArchived)
+          .filter((f) => (summary.fundCalculations[f.id]?.currentBalance ?? 0) >= 0);
+        setSpendableFundIds(nonDeficit.length > 0 ? [nonDeficit[0].id] : []);
+      }
+      setAutoClearDeficit(true);
     }
-  }, [isOpen, transactionToEdit, initialType, initialFundId, funds, categories]);
+  }, [isOpen, transactionToEdit, initialType, initialFundId, funds, categories, summary.fundCalculations]);
 
   const activeFunds = useMemo(() => funds.filter((f) => !f.isArchived), [funds]);
   const expenseCategories = useMemo(
@@ -236,11 +268,37 @@ export function TransactionModal({
     }
   }, [numAmount, selectedFundId, currentFundBalance, activeTab, fromFundId, fromFundBalance, settings]);
 
+  // Deficit adjustment calculation for Income
+  const deficitAdjustmentResult = useMemo(() => {
+    if (
+      !autoClearDeficit ||
+      summary.totalDeficit <= 0 ||
+      spendableFundIds.length === 0 ||
+      numAmount <= 0
+    ) {
+      return null;
+    }
+    return calculateAllocationsWithDeficitAdjustment(
+      numAmount,
+      activeFunds,
+      summary.deficitFunds,
+      spendableFundIds
+    );
+  }, [autoClearDeficit, summary.totalDeficit, summary.deficitFunds, spendableFundIds, numAmount, activeFunds]);
+
   // Dynamic automatic allocation calculation for Income preview
   const autoAllocations = useMemo(() => {
     if (activeTab !== 'income' || numAmount <= 0) return [];
+    if (
+      allocationMethod === 'automatic' &&
+      autoClearDeficit &&
+      deficitAdjustmentResult &&
+      deficitAdjustmentResult.totalDeficitCleared > 0
+    ) {
+      return deficitAdjustmentResult.snapshots;
+    }
     return calculateAllocations(numAmount, activeFunds);
-  }, [activeTab, numAmount, activeFunds]);
+  }, [activeTab, numAmount, activeFunds, allocationMethod, autoClearDeficit, deficitAdjustmentResult]);
 
   // Sync manual allocations when switching to manual
   useEffect(() => {
@@ -299,7 +357,11 @@ export function TransactionModal({
             amount: Number(manualAllocations[f.id]) || 0,
           }));
         } else if (allocationMethod === 'automatic') {
-          customList = calculateAllocations(numAmount, activeFunds);
+          if (autoClearDeficit && deficitAdjustmentResult && deficitAdjustmentResult.totalDeficitCleared > 0) {
+            customList = deficitAdjustmentResult.snapshots;
+          } else {
+            customList = calculateAllocations(numAmount, activeFunds);
+          }
         } else {
           customList = [];
         }
@@ -381,6 +443,27 @@ export function TransactionModal({
           percentage: f.allocationPercentage,
           amount: Number(manualAllocations[f.id]) || 0,
         }));
+      } else if (
+        allocationMethod === 'automatic' &&
+        autoClearDeficit &&
+        deficitAdjustmentResult &&
+        deficitAdjustmentResult.totalDeficitCleared > 0
+      ) {
+        customList = deficitAdjustmentResult.snapshots;
+      }
+
+      let finalNotes = notes;
+      if (
+        allocationMethod === 'automatic' &&
+        autoClearDeficit &&
+        deficitAdjustmentResult &&
+        deficitAdjustmentResult.totalDeficitCleared > 0
+      ) {
+        const clearedInfo = `Auto-cleared deficit: ${formatCurrency(
+          deficitAdjustmentResult.totalDeficitCleared,
+          settings
+        )} routed to clear deficits and deducted from spendable funds.`;
+        finalNotes = finalNotes ? `${finalNotes} | ${clearedInfo}` : clearedInfo;
       }
 
       const res = addIncome({
@@ -388,7 +471,7 @@ export function TransactionModal({
         source: incomeSource,
         date,
         description: description || `Income: ${incomeSource}`,
-        notes,
+        notes: finalNotes,
         allocationMethod,
         customAllocations: customList,
       });
@@ -967,6 +1050,91 @@ export function TransactionModal({
                 </div>
               </div>
 
+              {/* Deficit / Debit Auto-Clearance Section */}
+              {summary.totalDeficit > 0 && (
+                <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="autoClearDeficitCheck"
+                        checked={autoClearDeficit}
+                        onChange={(e) => setAutoClearDeficit(e.target.checked)}
+                        className="w-4 h-4 text-rose-600 rounded border-rose-300 focus:ring-rose-400 cursor-pointer"
+                      />
+                      <label htmlFor="autoClearDeficitCheck" className="text-xs font-bold text-rose-950 cursor-pointer flex items-center gap-1.5">
+                        <span>Cut Deficit from Spendable Funds</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-200/80 text-rose-900 font-black">
+                          -{formatCurrency(summary.totalDeficit, settings)}
+                        </span>
+                      </label>
+                    </div>
+                    <span className="text-[10px] text-rose-700 font-semibold">
+                      {summary.deficitFunds.length} in deficit
+                    </span>
+                  </div>
+
+                  {autoClearDeficit && (
+                    <div className="pt-2 border-t border-rose-200/70 space-y-2 text-xs">
+                      <p className="text-[11px] text-rose-800 leading-snug">
+                        Automatically replenishes deficit funds to 0 and cuts that debit from your spendable funds (Personal & Brother) so you get to spend less since you already used it.
+                      </p>
+
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-rose-900 block mb-1">
+                          Select Spendable Fund(s) to Absorb Debit:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeFunds
+                            .filter((f) => (summary.fundCalculations[f.id]?.currentBalance ?? 0) >= 0)
+                            .map((f) => {
+                              const isChecked = spendableFundIds.includes(f.id);
+                              return (
+                                <button
+                                  key={f.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSpendableFundIds((prev) =>
+                                      prev.includes(f.id) ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                                    );
+                                  }}
+                                  className={`px-2.5 py-1 text-xs rounded-xl font-bold border flex items-center gap-1.5 transition-all ${
+                                    isChecked
+                                      ? 'bg-rose-500 text-white border-rose-600 shadow-2xs'
+                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span>{f.name}</span>
+                                  {isChecked && <span className="text-[10px]">✓</span>}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+
+                      {deficitAdjustmentResult && deficitAdjustmentResult.totalDeficitCleared > 0 && (
+                        <div className="p-2 rounded-xl bg-white/90 border border-rose-200 text-[11px] text-slate-700 space-y-1">
+                          <div className="font-bold text-rose-950 flex items-center justify-between">
+                            <span>Deficit to be Cleared:</span>
+                            <span className="text-emerald-700 font-black">
+                              +{formatCurrency(deficitAdjustmentResult.totalDeficitCleared, settings)}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 space-y-0.5">
+                            {summary.deficitFunds.map((df) => (
+                              <div key={df.fundId} className="flex justify-between">
+                                <span>{df.fundName}: replenishing deficit of {formatCurrency(df.deficitAmount, settings)}</span>
+                                <span className="font-bold text-emerald-600">→ Restored to 0</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Fund Allocation Live Preview Box */}
               {allocationMethod === 'automatic' && (
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
@@ -1058,11 +1226,23 @@ export function TransactionModal({
                     <div className="space-y-1.5 divide-y divide-slate-100 text-xs">
                       {autoAllocations.map((alloc) => (
                         <div key={alloc.fundId} className="pt-1.5 flex items-center justify-between">
-                          <span className="font-medium text-slate-700">
-                            {alloc.fundName}{' '}
-                            <span className="text-slate-400 text-[11px]">({alloc.percentage}%)</span>
-                          </span>
-                          <span className="font-bold text-emerald-600">
+                          <div>
+                            <span className="font-medium text-slate-700 block">
+                              {alloc.fundName}{' '}
+                              <span className="text-slate-400 text-[11px]">({alloc.percentage}%)</span>
+                            </span>
+                            {deficitAdjustmentResult?.clearedPerFund[alloc.fundId] && (
+                              <span className="text-[10px] font-bold text-emerald-600 block">
+                                +{formatCurrency(deficitAdjustmentResult.clearedPerFund[alloc.fundId], settings)} to clear deficit
+                              </span>
+                            )}
+                            {deficitAdjustmentResult?.deductedPerSpendableFund[alloc.fundId] && (
+                              <span className="text-[10px] font-bold text-rose-600 block">
+                                -{formatCurrency(deficitAdjustmentResult.deductedPerSpendableFund[alloc.fundId], settings)} deficit deduction
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-bold text-emerald-600 shrink-0">
                             +{formatCurrency(alloc.amount, settings)}
                           </span>
                         </div>
