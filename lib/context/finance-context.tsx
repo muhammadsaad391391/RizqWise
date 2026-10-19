@@ -491,9 +491,27 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
 
+      // If any fund receiving allocations had a balance shortfall/adjustment (manualBalanceAdjustment < 0),
+      // absorb that deficit adjustment so the deviation returns to 0 difference.
+      const nextFunds = funds.map((f) => {
+        const alloc = allocations.find((a) => a.fundId === f.id);
+        if (!alloc || (f.manualBalanceAdjustment || 0) >= 0) return f;
+
+        const curAdj = f.manualBalanceAdjustment || 0;
+        const baselineAmount = Math.round(((amount * (f.allocationPercentage || 0)) / 100) * 100) / 100;
+        const extraCleared = Math.max(0, Math.round((alloc.amount - baselineAmount) * 100) / 100);
+        const absorb = Math.min(extraCleared > 0 ? extraCleared : alloc.amount, Math.abs(curAdj));
+        if (absorb > 0) {
+          const newAdj = Math.round((curAdj + absorb) * 100) / 100;
+          return { ...f, manualBalanceAdjustment: newAdj, updatedAt: new Date().toISOString() };
+        }
+        return f;
+      });
+
       const nextTransactions = [newTx, ...transactions];
+      setFunds(nextFunds);
       setTransactions(nextTransactions);
-      persistState(funds, nextTransactions, categories, settings);
+      persistState(nextFunds, nextTransactions, categories, settings);
 
       return { success: true };
     },

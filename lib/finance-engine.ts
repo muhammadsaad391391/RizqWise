@@ -327,18 +327,29 @@ export function calculateFinancialSummary(
 
     if (!fund.isArchived) {
       totalBalance += calc.currentBalance;
-      if (calc.currentBalance < 0) {
-        const def = Math.abs(calc.currentBalance);
-        totalDeficit += def;
+
+      // Deficit calculation:
+      // A fund is in deficit/debit if:
+      // 1. Its currentBalance is negative (overdrawn): def = abs(currentBalance)
+      // 2. Or it has an unaccounted shortfall/deviation where distributed > accounted: def = deviation
+      const negativeDef = calc.currentBalance < 0 ? Math.abs(calc.currentBalance) : 0;
+      const deviationDef = calc.deviation && calc.deviation > 0 ? calc.deviation : 0;
+      const fundDeficit = Math.round(Math.max(negativeDef, deviationDef) * 100) / 100;
+
+      if (fundDeficit > 0) {
+        totalDeficit += fundDeficit;
         deficitFunds.push({
           fundId: fund.id,
           fundName: fund.name,
-          deficitAmount: def,
+          deficitAmount: fundDeficit,
           currentBalance: calc.currentBalance,
+          deviation: calc.deviation,
           color: fund.color,
           icon: fund.icon,
         });
-      } else {
+      }
+
+      if (calc.currentBalance > 0) {
         positiveWealth += calc.currentBalance;
       }
     }

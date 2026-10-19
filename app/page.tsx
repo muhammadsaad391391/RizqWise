@@ -265,11 +265,11 @@ export default function DashboardPage() {
                     Category Deficits &amp; Debits
                   </h3>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-200 text-rose-900">
-                    {summary.deficitFunds.length} {summary.deficitFunds.length === 1 ? 'category overspent' : 'categories overspent'}
+                    {summary.deficitFunds.length} {summary.deficitFunds.length === 1 ? 'category in deficit' : 'categories in deficit'}
                   </span>
                 </div>
                 <p className="text-xs text-rose-700 mt-0.5">
-                  Total deficit of <span className="font-black text-rose-950">{formatCurrency(summary.totalDeficit, settings)}</span>. You can clear it automatically from spendable funds when adding income, or settle via transfer.
+                  Total deficit / debit of <span className="font-black text-rose-950">{formatCurrency(summary.totalDeficit, settings)}</span> across short or overspent funds. You can clear it automatically from spendable funds when adding income, or settle via transfer.
                 </p>
               </div>
             </div>
@@ -313,7 +313,7 @@ export default function DashboardPage() {
                       {df.fundName}
                     </span>
                     <span className="text-[10px] font-semibold text-rose-600 block">
-                      Negative balance
+                      {df.currentBalance < 0 ? 'Negative balance' : 'Shortfall / Deviation'}
                     </span>
                   </div>
                 </div>

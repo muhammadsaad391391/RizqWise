@@ -40,6 +40,7 @@ export function TransactionModal({
     categories,
     settings,
     summary,
+    customStats,
     addExpense,
     addIncome,
     addTransfer,
@@ -174,8 +175,9 @@ export function TransactionModal({
       }
 
       // Initialize spendable funds (Personal, Brother, Spend, Pocket, Mine, etc.)
+      const deficitFundIdSet = new Set((summary.deficitFunds || []).map((df) => df.fundId));
       const matching = funds
-        .filter((f) => !f.isArchived)
+        .filter((f) => !f.isArchived && !deficitFundIdSet.has(f.id))
         .filter((f) => {
           const n = f.name.toLowerCase();
           return (
@@ -188,17 +190,30 @@ export function TransactionModal({
         })
         .map((f) => f.id);
 
+      // Also check if any custom combined stat contains "spend" in its name and include its funds
+      if (customStats) {
+        customStats
+          .filter((s) => s.name.toLowerCase().includes('spend'))
+          .forEach((s) => {
+            s.fundIds.forEach((fid) => {
+              if (!deficitFundIdSet.has(fid) && !matching.includes(fid)) {
+                matching.push(fid);
+              }
+            });
+          });
+      }
+
       if (matching.length > 0) {
         setSpendableFundIds(matching);
       } else {
         const nonDeficit = funds
-          .filter((f) => !f.isArchived)
+          .filter((f) => !f.isArchived && !deficitFundIdSet.has(f.id))
           .filter((f) => (summary.fundCalculations[f.id]?.currentBalance ?? 0) >= 0);
         setSpendableFundIds(nonDeficit.length > 0 ? [nonDeficit[0].id] : []);
       }
       setAutoClearDeficit(true);
     }
-  }, [isOpen, transactionToEdit, initialType, initialFundId, funds, categories, summary.fundCalculations]);
+  }, [isOpen, transactionToEdit, initialType, initialFundId, funds, categories, summary.fundCalculations, summary.deficitFunds, customStats]);
 
   const activeFunds = useMemo(() => funds.filter((f) => !f.isArchived), [funds]);
   const expenseCategories = useMemo(
@@ -1086,7 +1101,7 @@ export function TransactionModal({
                         </span>
                         <div className="flex flex-wrap gap-1.5">
                           {activeFunds
-                            .filter((f) => (summary.fundCalculations[f.id]?.currentBalance ?? 0) >= 0)
+                            .filter((f) => !summary.deficitFunds.some((df) => df.fundId === f.id))
                             .map((f) => {
                               const isChecked = spendableFundIds.includes(f.id);
                               return (
@@ -1112,22 +1127,40 @@ export function TransactionModal({
                         </div>
                       </div>
 
-                      {deficitAdjustmentResult && deficitAdjustmentResult.totalDeficitCleared > 0 && (
-                        <div className="p-2 rounded-xl bg-white/90 border border-rose-200 text-[11px] text-slate-700 space-y-1">
+                      {summary.deficitFunds.length > 0 && (
+                        <div className="p-2.5 rounded-xl bg-white/95 border border-rose-200 text-[11px] text-slate-700 space-y-1.5">
                           <div className="font-bold text-rose-950 flex items-center justify-between">
-                            <span>Deficit to be Cleared:</span>
-                            <span className="text-emerald-700 font-black">
-                              +{formatCurrency(deficitAdjustmentResult.totalDeficitCleared, settings)}
+                            <span>Outstanding Category Deficits:</span>
+                            <span className="text-rose-700 font-black">
+                              {formatCurrency(summary.totalDeficit, settings)}
                             </span>
                           </div>
-                          <div className="text-[10px] text-slate-500 space-y-0.5">
-                            {summary.deficitFunds.map((df) => (
-                              <div key={df.fundId} className="flex justify-between">
-                                <span>{df.fundName}: replenishing deficit of {formatCurrency(df.deficitAmount, settings)}</span>
-                                <span className="font-bold text-emerald-600">→ Restored to 0</span>
-                              </div>
-                            ))}
+                          <div className="text-[10px] text-slate-600 space-y-1">
+                            {summary.deficitFunds.map((df) => {
+                              const clearedAmt = deficitAdjustmentResult?.clearedPerFund[df.fundId] || 0;
+                              return (
+                                <div key={df.fundId} className="flex justify-between items-center bg-rose-50/50 p-1.5 rounded-lg">
+                                  <span>
+                                    <strong>{df.fundName}:</strong>{' '}
+                                    {df.currentBalance < 0
+                                      ? `Overdrawn balance (-${formatCurrency(df.deficitAmount, settings)})`
+                                      : `Shortfall / Deviation of ${formatCurrency(df.deficitAmount, settings)}`}
+                                  </span>
+                                  <span className="font-bold text-emerald-700">
+                                    {numAmount > 0
+                                      ? `+${formatCurrency(clearedAmt, settings)} replenishing`
+                                      : 'Will replenish on income'}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
+                          {numAmount > 0 && deficitAdjustmentResult && deficitAdjustmentResult.totalDeficitCleared > 0 && (
+                            <div className="pt-1 border-t border-rose-100 flex items-center justify-between text-[11px] font-bold text-emerald-800">
+                              <span>Total Debit Cut from Spendable Funds:</span>
+                              <span>-{formatCurrency(deficitAdjustmentResult.totalDeficitCleared, settings)}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

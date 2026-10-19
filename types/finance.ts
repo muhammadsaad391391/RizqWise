@@ -134,6 +134,7 @@ export interface DeficitFundInfo {
   fundName: string;
   deficitAmount: number;
   currentBalance: number;
+  deviation?: number;
   color?: string;
   icon?: string;
 }
