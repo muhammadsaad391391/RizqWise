@@ -26,8 +26,10 @@ import {
   CheckCircle2,
   AlertCircle,
   HandCoins,
+  FileText,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { downloadFundStatementPDF } from '@/lib/pdf-statement';
 
 export default function FundDetailPage() {
   const params = useParams();
@@ -218,6 +220,23 @@ export default function FundDetailPage() {
           >
             <HandCoins className="w-3.5 h-3.5 shrink-0" />
             <span>Loan</span>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              await downloadFundStatementPDF(
+                fund,
+                transactions,
+                funds,
+                settings,
+                runningBalances,
+                calc.currentBalance,
+              );
+            }}
+            className="px-3 py-2 text-xs font-bold rounded-xl bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+          >
+            <FileText className="w-3.5 h-3.5 shrink-0" />
+            <span>PDF</span>
           </button>
         </div>
       </div>

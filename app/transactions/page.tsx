@@ -12,6 +12,7 @@ import {
   Search,
   Filter,
   Download,
+  FileText,
   Trash2,
   Edit3,
   ArrowUpRight,
@@ -23,6 +24,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { format, parseISO, isWithinInterval } from 'date-fns';
+import { downloadAccountStatementPDF } from '@/lib/pdf-statement';
 
 export default function TransactionsPage() {
   const { funds, transactions, categories, settings, deleteTransaction, runningBalances } = useFinance();
@@ -243,6 +245,23 @@ export default function TransactionsPage() {
     document.body.removeChild(link);
   };
 
+  const exportToPDF = async () => {
+    if (sortedTransactions.length === 0) {
+      alert('No transactions to export.');
+      return;
+    }
+    const fundName = selectedFundId !== 'all'
+      ? activeFunds.find((f) => f.id === selectedFundId)?.name
+      : undefined;
+    await downloadAccountStatementPDF(
+      sortedTransactions,
+      funds,
+      settings,
+      runningBalances,
+      { filteredTitle: fundName },
+    );
+  };
+
   const clearFilters = () => {
     setSearchQuery('');
     setSelectedType('all');
@@ -279,6 +298,14 @@ export default function TransactionsPage() {
           >
             <Download className="w-4 h-4 text-slate-600" />
             Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={exportToPDF}
+            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <FileText className="w-4 h-4 text-red-500" />
+            Export PDF
           </button>
           <button
             type="button"
