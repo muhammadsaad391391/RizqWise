@@ -7,8 +7,9 @@ import { formatCurrency } from '@/lib/finance-engine';
 import { IconRenderer } from '@/components/common/icon-renderer';
 import { TransactionModal } from '@/components/modals/transaction-modal';
 import { CustomStatModal } from '@/components/modals/custom-stat-modal';
+import { LoanRepaymentModal } from '@/components/modals/loan-repayment-modal';
 import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard';
-import { Transaction, IncomeTransaction, ExpenseTransaction, TransferTransaction, CustomStatMetric } from '@/types/finance';
+import { Transaction, IncomeTransaction, ExpenseTransaction, TransferTransaction, CustomStatMetric, CategoryLoan } from '@/types/finance';
 import {
   Wallet,
   ArrowRightLeft,
@@ -22,6 +23,7 @@ import {
   ListOrdered,
   Plus,
   AlertTriangle,
+  HandCoins,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,14 +37,18 @@ import {
 import { format, parseISO } from 'date-fns';
 
 export default function DashboardPage() {
-  const { funds, transactions, categories, settings, summary, selectedMonth, deleteTransaction, customStats } = useFinance();
+  const { funds, transactions, categories, settings, summary, selectedMonth, deleteTransaction, customStats, loans, runningBalances } = useFinance();
   const [mounted, setMounted] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer'>('expense');
+  const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer' | 'loan'>('expense');
   const [dashboardTab, setDashboardTab] = useState<'ledger' | 'charts'>('ledger');
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [isStatModalOpen, setIsStatModalOpen] = useState(false);
   const [editingStat, setEditingStat] = useState<CustomStatMetric | null>(null);
+
+  // Category Loan Repayment Modal State
+  const [repayingLoan, setRepayingLoan] = useState<CategoryLoan | null>(null);
+  const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
 
   const openStatModal = (stat?: CustomStatMetric | null) => {
     setEditingStat(stat || null);
@@ -53,13 +59,18 @@ export default function DashboardPage() {
     setMounted(true);
   }, []);
 
-  const openModal = (type: 'expense' | 'income' | 'transfer') => {
+  const openModal = (type: 'expense' | 'income' | 'transfer' | 'loan') => {
     setEditingTx(null);
     setModalType(type);
     setIsModalOpen(true);
   };
 
   const activeFunds = useMemo(() => funds.filter((f) => !f.isArchived), [funds]);
+
+  // Active Category Loans
+  const activeLoans = useMemo(() => {
+    return (loans || summary.categoryLoans || []).filter((l) => l.status === 'active');
+  }, [loans, summary.categoryLoans]);
 
   // Filter transactions for recent view
   const recentTransactions = useMemo(() => {
@@ -137,11 +148,11 @@ export default function DashboardPage() {
           </div>
 
           {/* Clean Quick Action Buttons */}
-          <div className="grid grid-cols-3 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-4 sm:flex sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => openModal('income')}
-              className="py-2.5 px-3.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1.5 transition-transform active:scale-95"
+              className="py-2.5 px-2.5 sm:px-3.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 transition-transform active:scale-95"
             >
               <ArrowUpRight className="w-4 h-4 shrink-0" />
               <span>Income</span>
@@ -149,7 +160,7 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => openModal('expense')}
-              className="py-2.5 px-3.5 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-sm flex items-center justify-center gap-1.5 transition-transform active:scale-95"
+              className="py-2.5 px-2.5 sm:px-3.5 text-xs font-bold rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 transition-transform active:scale-95"
             >
               <ArrowDownRight className="w-4 h-4 shrink-0" />
               <span>Expense</span>
@@ -157,10 +168,18 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => openModal('transfer')}
-              className="py-2.5 px-3.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center gap-1.5 transition-colors"
+              className="py-2.5 px-2.5 sm:px-3.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center gap-1 sm:gap-1.5 transition-colors"
             >
               <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
               <span>Transfer</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openModal('loan')}
+              className="py-2.5 px-2.5 sm:px-3.5 text-xs font-bold rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300/80 flex items-center justify-center gap-1 sm:gap-1.5 transition-colors"
+            >
+              <HandCoins className="w-3.5 h-3.5 shrink-0" />
+              <span>Loan</span>
             </button>
           </div>
         </div>
@@ -327,6 +346,99 @@ export default function DashboardPage() {
                 </div>
               </Link>
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* ACTIVE INTER-CATEGORY LOANS BANNER */}
+      {activeLoans.length > 0 && (
+        <section className="bg-amber-50/80 border border-amber-200/90 rounded-3xl p-4 sm:p-5 shadow-2xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <HandCoins className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm sm:text-base font-extrabold text-amber-950">
+                    Inter-Category Loans
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900">
+                    {activeLoans.length} active {activeLoans.length === 1 ? 'loan' : 'loans'}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 mt-0.5">
+                  Internal category debt. Lender fund covered an expense or shortfall, and borrower fund owes repayment.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => openModal('loan')}
+              className="px-3.5 py-2 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors flex items-center gap-1.5 self-end sm:self-auto shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Take Loan</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            {activeLoans.map((loan) => {
+              const lender = funds.find((f) => f.id === loan.lenderFundId);
+              const borrower = funds.find((f) => f.id === loan.borrowerFundId);
+
+              return (
+                <div
+                  key={loan.id}
+                  className="p-3.5 rounded-2xl bg-white/95 hover:bg-white border border-amber-200/90 hover:border-amber-300 transition-all flex flex-col justify-between gap-3 shadow-2xs group"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-bold text-slate-900 truncate">
+                        {borrower?.name || 'Borrower'}
+                      </div>
+                      <span className="text-xs font-black text-amber-900 shrink-0">
+                        {formatCurrency(loan.remainingAmount, settings)}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                      <span>Lender:</span>
+                      <span className="font-semibold text-slate-800">{lender?.name || 'Lender'}</span>
+                    </div>
+
+                    {loan.amountRepaid > 0 && (
+                      <div className="text-[10px] font-semibold text-emerald-700 mt-1">
+                        Repaid {formatCurrency(loan.amountRepaid, settings)} of {formatCurrency(loan.amount, settings)}
+                      </div>
+                    )}
+
+                    {loan.description && (
+                      <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                        {loan.description}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <span className="text-[10px] text-slate-400">
+                      {format(parseISO(loan.date), 'dd MMM yyyy')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRepayingLoan(loan);
+                        setIsRepayModalOpen(true);
+                      }}
+                      className="px-3 py-1 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-2xs"
+                    >
+                      Repay Loan
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -501,6 +613,7 @@ export default function DashboardPage() {
                           const fund = expTx ? funds.find((f) => f.id === expTx.fundId) : null;
                           const fromFund = trfTx ? funds.find((f) => f.id === trfTx.fromFundId) : null;
                           const toFund = trfTx ? funds.find((f) => f.id === trfTx.toFundId) : null;
+                          const postBal = runningBalances[tx.id];
 
                           return (
                             <div
@@ -515,6 +628,10 @@ export default function DashboardPage() {
                                       ? 'bg-emerald-500 text-white'
                                       : isExpense
                                       ? 'bg-amber-100 text-amber-900'
+                                      : trfTx?.isLoan
+                                      ? 'bg-amber-100 text-amber-900'
+                                      : trfTx?.isLoanRepayment
+                                      ? 'bg-emerald-100 text-emerald-900'
                                       : 'bg-blue-100 text-blue-900'
                                   }`}
                                 >
@@ -522,6 +639,8 @@ export default function DashboardPage() {
                                     <IconRenderer name="Wallet" className="w-4 h-4" />
                                   ) : isExpense ? (
                                     <IconRenderer name={cat?.icon || 'Utensils'} className="w-4 h-4" />
+                                  ) : trfTx?.isLoan || trfTx?.isLoanRepayment ? (
+                                    <HandCoins className="w-4 h-4" />
                                   ) : (
                                     <ArrowRightLeft className="w-4 h-4" />
                                   )}
@@ -529,7 +648,13 @@ export default function DashboardPage() {
 
                                 <div className="truncate">
                                   <div className="text-xs sm:text-sm font-bold text-slate-800 truncate">
-                                    {isIncome ? incTx?.description || incTx?.source : expTx?.title || trfTx?.title}
+                                    {isIncome
+                                      ? incTx?.description || incTx?.source
+                                      : trfTx?.isLoan
+                                      ? `Category Loan: ${fromFund?.name} → ${toFund?.name}`
+                                      : trfTx?.isLoanRepayment
+                                      ? `Loan Repayment: ${fromFund?.name} → ${toFund?.name}`
+                                      : expTx?.title || trfTx?.title}
                                   </div>
                                   <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
                                     {isExpense && (
@@ -538,8 +663,20 @@ export default function DashboardPage() {
                                       </span>
                                     )}
                                     {isTransfer && (
-                                      <span className="font-semibold text-blue-600">
-                                        {fromFund?.name} → {toFund?.name}
+                                      <span
+                                        className={`font-semibold ${
+                                          trfTx?.isLoan
+                                            ? 'text-amber-800'
+                                            : trfTx?.isLoanRepayment
+                                            ? 'text-emerald-800'
+                                            : 'text-blue-600'
+                                        }`}
+                                      >
+                                        {trfTx?.isLoan
+                                          ? `Borrowed by ${toFund?.name} from ${fromFund?.name}`
+                                          : trfTx?.isLoanRepayment
+                                          ? `Settled debt to ${toFund?.name}`
+                                          : `${fromFund?.name} → ${toFund?.name}`}
                                       </span>
                                     )}
                                     {isIncome && (
@@ -566,6 +703,37 @@ export default function DashboardPage() {
                                   {isTransfer && '⇄ '}
                                   {formatCurrency(tx.amount, settings)}
                                 </div>
+
+                                {/* Running balance after transaction */}
+                                {postBal && (
+                                  <div className="text-[11px] font-bold text-slate-500 mt-0.5">
+                                    {isExpense && postBal.fundBalanceAfter !== undefined && (
+                                      <span>
+                                        <span className="text-[10px] text-slate-400 font-medium">Bal: </span>
+                                        <span className={postBal.fundBalanceAfter < 0 ? 'text-rose-600 font-black' : 'text-slate-700 font-black'}>
+                                          {formatCurrency(postBal.fundBalanceAfter, settings)}
+                                        </span>
+                                      </span>
+                                    )}
+                                    {isTransfer && postBal.fromFundBalanceAfter !== undefined && (
+                                      <span className="text-[10px] text-slate-500 font-medium">
+                                        <span>Bal: </span>
+                                        <strong className={postBal.fromFundBalanceAfter < 0 ? 'text-rose-600' : 'text-slate-700'}>
+                                          {formatCurrency(postBal.fromFundBalanceAfter, settings)}
+                                        </strong>
+                                      </span>
+                                    )}
+                                    {isIncome && postBal.totalBalanceAfter !== undefined && (
+                                      <span>
+                                        <span className="text-[10px] text-slate-400 font-medium">Total: </span>
+                                        <span className="text-emerald-700 font-black">
+                                          {formatCurrency(postBal.totalBalanceAfter, settings)}
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
                                 <div className="flex items-center gap-2.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity justify-end mt-1">
                                   <button
                                     type="button"
@@ -685,6 +853,16 @@ export default function DashboardPage() {
           setEditingStat(null);
         }}
         initialStat={editingStat}
+      />
+
+      {/* Category Loan Repayment Modal */}
+      <LoanRepaymentModal
+        isOpen={isRepayModalOpen}
+        onClose={() => {
+          setIsRepayModalOpen(false);
+          setRepayingLoan(null);
+        }}
+        loan={repayingLoan}
       />
     </div>
   );

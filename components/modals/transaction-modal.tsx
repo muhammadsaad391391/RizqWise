@@ -18,12 +18,12 @@ import {
   TransferTransaction,
 } from '@/types/finance';
 import { format } from 'date-fns';
-import { X, ArrowRightLeft, ArrowDownRight, ArrowUpRight, AlertTriangle, CheckCircle2, AlertCircle, PlusCircle, Plus, Edit2 } from 'lucide-react';
+import { X, ArrowRightLeft, ArrowDownRight, ArrowUpRight, AlertTriangle, CheckCircle2, AlertCircle, PlusCircle, Plus, Edit2, HandCoins } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialType?: 'expense' | 'income' | 'transfer';
+  initialType?: 'expense' | 'income' | 'transfer' | 'loan';
   initialFundId?: string;
   transactionToEdit?: Transaction | null;
 }
@@ -44,12 +44,14 @@ export function TransactionModal({
     addExpense,
     addIncome,
     addTransfer,
+    addCategoryLoan,
     updateTransaction,
     addCategory,
     updateAllocationRules,
+    loans,
   } = useFinance();
 
-  const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'transfer'>(initialType);
+  const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'transfer' | 'loan'>(initialType);
 
   // Inline Category Creation State (Expense & Income)
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
@@ -450,6 +452,13 @@ export function TransactionModal({
       onClose();
     } else if (activeTab === 'income') {
       let customList: FundAllocationSnapshot[] | undefined = undefined;
+      const pendingSettlements: {
+        fromFundId: string;
+        toFundId: string;
+        amount: number;
+        loanId?: string;
+        title?: string;
+      }[] = [];
 
       if (allocationMethod === 'manual') {
         customList = activeFunds.map((f) => ({
@@ -464,7 +473,29 @@ export function TransactionModal({
         deficitAdjustmentResult &&
         deficitAdjustmentResult.totalDeficitCleared > 0
       ) {
-        customList = deficitAdjustmentResult.snapshots;
+        // Build explicit settlement transactions for each deficit fund from selected spendable funds.
+        // As requested by user: incoming is lodged in spendable category in full, then a repayment expense is lodged to the deficit category.
+        summary.deficitFunds.forEach((df) => {
+          const clearedAmt = deficitAdjustmentResult.clearedPerFund[df.fundId] || 0;
+          if (clearedAmt <= 0) return;
+
+          // Find active loan if any
+          const matchingLoan = (settings.categoryLoans || []).find(
+            (l) => l.borrowerFundId === df.fundId && l.status === 'active'
+          );
+
+          // Find spendable fund(s) deducting for this
+          const primarySpendableId = spendableFundIds[0] || df.fundId;
+          const fromFund = funds.find((f) => f.id === primarySpendableId);
+
+          pendingSettlements.push({
+            fromFundId: primarySpendableId,
+            toFundId: df.fundId,
+            amount: clearedAmt,
+            loanId: matchingLoan?.id,
+            title: `Repayment: ${fromFund?.name || 'Spendable'} → ${df.fundName}`,
+          });
+        });
       }
 
       let finalNotes = notes;
@@ -474,10 +505,10 @@ export function TransactionModal({
         deficitAdjustmentResult &&
         deficitAdjustmentResult.totalDeficitCleared > 0
       ) {
-        const clearedInfo = `Auto-cleared deficit: ${formatCurrency(
+        const clearedInfo = `Auto-settled deficit/loan: ${formatCurrency(
           deficitAdjustmentResult.totalDeficitCleared,
           settings
-        )} routed to clear deficits and deducted from spendable funds.`;
+        )} lodged as expense from spendable fund to clear pending balance.`;
         finalNotes = finalNotes ? `${finalNotes} | ${clearedInfo}` : clearedInfo;
       }
 
@@ -489,6 +520,7 @@ export function TransactionModal({
         notes: finalNotes,
         allocationMethod,
         customAllocations: customList,
+        pendingSettlements: pendingSettlements.length > 0 ? pendingSettlements : undefined,
       });
 
       if (!res.success) {
@@ -519,6 +551,25 @@ export function TransactionModal({
         } else {
           setErrorMsg(res.error || 'Failed to execute transfer.');
         }
+        return;
+      }
+
+      onClose();
+    } else if (activeTab === 'loan') {
+      const lenderFund = funds.find((f) => f.id === fromFundId);
+      const borrowerFund = funds.find((f) => f.id === toFundId);
+
+      const res = addCategoryLoan({
+        lenderFundId: fromFundId,
+        borrowerFundId: toFundId,
+        amount: numAmount,
+        date,
+        description: description || `Category Loan: ${lenderFund?.name} → ${borrowerFund?.name}`,
+        notes,
+      });
+
+      if (!res.success) {
+        setErrorMsg(res.error || 'Failed to record category loan.');
         return;
       }
 
@@ -566,9 +617,9 @@ export function TransactionModal({
             </div>
           </div>
 
-          {/* Segmented Tab Control (Exact style from reference screenshot) */}
+          {/* Segmented Tab Control */}
           {!transactionToEdit ? (
-            <div className="grid grid-cols-3 gap-1 bg-amber-200/60 p-1 rounded-xl">
+            <div className="grid grid-cols-4 gap-1 bg-amber-200/60 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => {
@@ -576,14 +627,14 @@ export function TransactionModal({
                   setErrorMsg(null);
                   setWarningMsg(null);
                 }}
-                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'expense'
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'text-amber-950 hover:bg-amber-300/50'
                 }`}
               >
-                <ArrowDownRight className="w-4 h-4" />
-                Expense
+                <ArrowDownRight className="w-3.5 h-3.5" />
+                <span>Expense</span>
               </button>
               <button
                 type="button"
@@ -592,14 +643,14 @@ export function TransactionModal({
                   setErrorMsg(null);
                   setWarningMsg(null);
                 }}
-                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'income'
-                    ? 'bg-slate-900 text-white shadow-sm'
+                    ? 'bg-emerald-600 text-white shadow-sm'
                     : 'text-amber-950 hover:bg-amber-300/50'
                 }`}
               >
-                <ArrowUpRight className="w-4 h-4" />
-                Income
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                <span>Income</span>
               </button>
               <button
                 type="button"
@@ -608,14 +659,30 @@ export function TransactionModal({
                   setErrorMsg(null);
                   setWarningMsg(null);
                 }}
-                className={`py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
                   activeTab === 'transfer'
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'text-amber-950 hover:bg-amber-300/50'
                 }`}
               >
-                <ArrowRightLeft className="w-4 h-4" />
-                Transfer
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Transfer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('loan');
+                  setErrorMsg(null);
+                  setWarningMsg(null);
+                }}
+                className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  activeTab === 'loan'
+                    ? 'bg-purple-700 text-white shadow-sm font-bold'
+                    : 'text-amber-950 hover:bg-amber-300/50'
+                }`}
+              >
+                <HandCoins className="w-3.5 h-3.5" />
+                <span>Loan</span>
               </button>
             </div>
           ) : (
@@ -1411,6 +1478,92 @@ export function TransactionModal({
             </div>
           )}
 
+          {/* TAB 4: CATEGORY LOAN */}
+          {activeTab === 'loan' && (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-purple-50/90 border border-purple-200 rounded-2xl text-xs text-purple-900 leading-relaxed flex items-start gap-2.5">
+                <HandCoins className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-extrabold block text-purple-950 mb-0.5">Inter-Category Loan</span>
+                  Borrow money from a category with available balance to fund another category that has zero balance. Counted as an outflow from the lending category, giving the borrowing category balance to spend.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Borrower Fund */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Borrowing Category (Needs Money) <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={toFundId}
+                    onChange={(e) => setToFundId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white font-medium"
+                  >
+                    {activeFunds.map((f) => {
+                      const bal = summary.fundCalculations[f.id]?.currentBalance ?? 0;
+                      return (
+                        <option key={f.id} value={f.id} disabled={f.id === fromFundId}>
+                          {f.name} (Current: {formatCurrency(bal, settings)})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* Lender Fund */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Lending Category (Source of Funds) <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={fromFundId}
+                    onChange={(e) => setFromFundId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:outline-none bg-white font-medium"
+                  >
+                    {activeFunds.map((f) => {
+                      const bal = summary.fundCalculations[f.id]?.currentBalance ?? 0;
+                      return (
+                        <option key={f.id} value={f.id} disabled={f.id === toFundId}>
+                          {f.name} (Avail: {formatCurrency(bal, settings)})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Loan Date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Purpose / Reason
+                </label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Urgent expense while personal balance is 0"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 leading-relaxed">
+                ℹ️ <strong>Settlement Note:</strong> RizqWise tracks this debt. You can repay it anytime, or choose to automatically settle it when new income is received and distributed.
+              </div>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="pt-2 flex items-center justify-end gap-2.5">
             <button
@@ -1430,7 +1583,11 @@ export function TransactionModal({
                   ? 'Update Expense'
                   : activeTab === 'income'
                   ? 'Update Income'
+                  : activeTab === 'loan'
+                  ? 'Update Loan'
                   : 'Update Transfer'
+                : activeTab === 'loan'
+                ? 'Confirm Category Loan'
                 : 'Save Transaction'}
             </button>
           </div>

@@ -7,7 +7,8 @@ import { useFinance } from '@/lib/context/finance-context';
 import { formatCurrency } from '@/lib/finance-engine';
 import { IconRenderer } from '@/components/common/icon-renderer';
 import { TransactionModal } from '@/components/modals/transaction-modal';
-import { Transaction } from '@/types/finance';
+import { LoanRepaymentModal } from '@/components/modals/loan-repayment-modal';
+import { Transaction, CategoryLoan } from '@/types/finance';
 import {
   ChevronLeft,
   ArrowDownRight,
@@ -24,6 +25,7 @@ import {
   Sliders,
   CheckCircle2,
   AlertCircle,
+  HandCoins,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -41,10 +43,16 @@ export default function FundDetailPage() {
     deleteTransaction,
     updateFund,
     adjustFundBalance,
+    loans,
+    runningBalances,
   } = useFinance();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer'>('expense');
+  const [modalType, setModalType] = useState<'expense' | 'income' | 'transfer' | 'loan'>('expense');
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+
+  // Loan Repayment Modal State
+  const [repayingLoan, setRepayingLoan] = useState<CategoryLoan | null>(null);
+  const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
 
   // Direct Balance Adjustment State
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -107,11 +115,24 @@ export default function FundDetailPage() {
     );
   }
 
-  const openAction = (type: 'expense' | 'income' | 'transfer') => {
+  const openAction = (type: 'expense' | 'income' | 'transfer' | 'loan') => {
     setEditingTx(null);
     setModalType(type);
     setIsModalOpen(true);
   };
+
+  // Active Category Loans involving this fund
+  const fundBorrowedLoans = useMemo(() => {
+    return (loans || summary.categoryLoans || []).filter(
+      (l) => l.borrowerFundId === fundId && l.status === 'active'
+    );
+  }, [loans, summary.categoryLoans, fundId]);
+
+  const fundLentLoans = useMemo(() => {
+    return (loans || summary.categoryLoans || []).filter(
+      (l) => l.lenderFundId === fundId && l.status === 'active'
+    );
+  }, [loans, summary.categoryLoans, fundId]);
 
   const isNegative = calc.currentBalance < 0;
 
@@ -145,7 +166,7 @@ export default function FundDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
+        <div className="grid grid-cols-3 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => {
@@ -190,8 +211,65 @@ export default function FundDetailPage() {
             <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
             <span>Transfer</span>
           </button>
+          <button
+            type="button"
+            onClick={() => openAction('loan')}
+            className="px-3 py-2 text-xs font-bold rounded-xl bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+          >
+            <HandCoins className="w-3.5 h-3.5 shrink-0" />
+            <span>Loan</span>
+          </button>
         </div>
       </div>
+
+      {/* ACTIVE CATEGORY LOANS NOTIFICATION BANNER */}
+      {fundBorrowedLoans.length > 0 && (
+        <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <HandCoins className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-bold text-amber-950 flex items-center gap-2">
+                <span>Active Borrowed Category Loans</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200 text-amber-900 font-extrabold">
+                  {formatCurrency(calc.activeLoansBorrowed || 0, settings)} total debt
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                This fund borrowed funds to cover expenses. Settle directly or via automatic income allocation.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {fundBorrowedLoans.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => {
+                  setRepayingLoan(l);
+                  setIsRepayModalOpen(true);
+                }}
+                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-2xs"
+              >
+                Repay {formatCurrency(l.remainingAmount, settings)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {fundLentLoans.length > 0 && (
+        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl p-3.5 shadow-2xs flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <HandCoins className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className="text-emerald-950">
+              <span className="font-bold">Active Lent Loans: </span>
+              <span>This category has lent <strong>{formatCurrency(calc.activeLoansLent || 0, settings)}</strong> to other categories (receivable).</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Primary Financial Balance & Ledger Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
@@ -225,28 +303,30 @@ export default function FundDetailPage() {
           </div>
         </div>
 
-        {/* Total Distributed from Income */}
+        {/* Total Inflows */}
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-soft">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Total Distributed
+            Total Inflows
           </span>
           <div className="text-xl sm:text-2xl font-extrabold text-emerald-600 mt-1 truncate">
-            +{formatCurrency(calc.totalDistributed ?? calc.lifetimeAllocated, settings)}
+            +{formatCurrency(calc.totalInflows ?? (calc.lifetimeAllocated + calc.transfersReceived + (fund.openingBalance || 0)), settings)}
           </div>
           <div className="text-[11px] text-slate-400 font-medium mt-1">
-            From income transactions
+            Dist: +{formatCurrency(calc.totalDistributed ?? calc.lifetimeAllocated, settings)} | Recv: +{formatCurrency(calc.transfersReceived, settings)}
           </div>
         </div>
 
-        {/* Lifetime Spent for Causes */}
+        {/* Total Outflows / Spent for Causes */}
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-soft">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Spent for Causes
+            Total Outflows
           </span>
           <div className="text-xl sm:text-2xl font-extrabold text-slate-800 mt-1 truncate">
-            -{formatCurrency(calc.lifetimeSpent, settings)}
+            -{formatCurrency(calc.totalOutflows ?? (calc.lifetimeSpent + calc.transfersSent), settings)}
           </div>
-          <div className="text-[11px] text-slate-400 font-medium mt-1">Total expenses deducted</div>
+          <div className="text-[11px] text-slate-400 font-medium mt-1">
+            Expenses: {formatCurrency(calc.lifetimeSpent, settings)} | Sent: {formatCurrency(calc.transfersSent, settings)}
+          </div>
         </div>
 
         {/* Net Transfers */}
@@ -454,6 +534,16 @@ export default function FundDetailPage() {
                 if (alloc) displayAmount = alloc.amount;
               }
 
+              const isLoan = isTransfer && Boolean((tx as any).isLoan);
+              const isLoanRepayment = isTransfer && Boolean((tx as any).isLoanRepayment);
+              const isSender = isTransfer && (tx as any).fromFundId === fundId;
+              const otherFundId = isTransfer
+                ? isSender
+                  ? (tx as any).toFundId
+                  : (tx as any).fromFundId
+                : null;
+              const otherFund = otherFundId ? funds.find((f) => f.id === otherFundId) : null;
+
               return (
                 <div
                   key={tx.id}
@@ -466,6 +556,10 @@ export default function FundDetailPage() {
                           ? 'bg-emerald-500 text-white'
                           : isExpense
                           ? 'bg-amber-100 text-amber-800'
+                          : isLoan
+                          ? 'bg-amber-100 text-amber-900'
+                          : isLoanRepayment
+                          ? 'bg-emerald-100 text-emerald-900'
                           : 'bg-blue-100 text-blue-800'
                       }`}
                     >
@@ -473,6 +567,8 @@ export default function FundDetailPage() {
                         <ArrowUpRight className="w-4 h-4" />
                       ) : isExpense ? (
                         <ArrowDownRight className="w-4 h-4" />
+                      ) : isLoan || isLoanRepayment ? (
+                        <HandCoins className="w-4 h-4" />
                       ) : (
                         <ArrowRightLeft className="w-4 h-4" />
                       )}
@@ -482,15 +578,35 @@ export default function FundDetailPage() {
                       <div className="text-sm font-bold text-slate-800 truncate">
                         {isIncome
                           ? `Income Allocation (${(tx as any).source})`
+                          : isLoan
+                          ? isSender
+                            ? `Category Loan to ${otherFund?.name || 'Category'}`
+                            : `Category Loan from ${otherFund?.name || 'Category'}`
+                          : isLoanRepayment
+                          ? isSender
+                            ? `Loan Repayment to ${otherFund?.name || 'Category'}`
+                            : `Loan Repayment from ${otherFund?.name || 'Category'}`
                           : (tx as any).title}
                       </div>
                       <div className="text-[11px] text-slate-400 font-medium flex items-center gap-2 mt-0.5">
                         <span>{format(parseISO(tx.date), 'dd MMM yyyy')}</span>
                         {isExpense && <span>• {(tx as any).category}</span>}
                         {isTransfer && (
-                          <span>
-                            • {(tx as any).fromFundId === fundId ? 'Sent to' : 'Received from'}{' '}
-                            other fund
+                          <span
+                            className={
+                              isLoan
+                                ? 'text-amber-800 font-semibold'
+                                : isLoanRepayment
+                                ? 'text-emerald-800 font-semibold'
+                                : ''
+                            }
+                          >
+                            •{' '}
+                            {isSender
+                              ? `Sent to ${otherFund?.name || 'other fund'}`
+                              : `Received from ${otherFund?.name || 'other fund'}`}
+                            {isLoan && (isSender ? ' (Lent out)' : ' (Borrowed)')}
+                            {isLoanRepayment && (isSender ? ' (Debt Repaid)' : ' (Debt Recovered)')}
                           </span>
                         )}
                       </div>
@@ -512,6 +628,23 @@ export default function FundDetailPage() {
                           ? `-${formatCurrency(tx.amount, settings)}`
                           : `+${formatCurrency(tx.amount, settings)}`)}
                     </div>
+
+                    {/* Balance after transaction at that time */}
+                    {runningBalances[tx.id]?.fundBalancesAfter?.[fundId] !== undefined && (
+                      <div className="text-[11px] font-bold text-slate-500 mt-0.5">
+                        <span className="text-[10px] text-slate-400 font-medium">Bal: </span>
+                        <span
+                          className={
+                            runningBalances[tx.id].fundBalancesAfter[fundId] < 0
+                              ? 'text-rose-600 font-black'
+                              : 'text-slate-700 font-black'
+                          }
+                        >
+                          {formatCurrency(runningBalances[tx.id].fundBalancesAfter[fundId], settings)}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end mt-1">
                       <button
                         type="button"
@@ -816,6 +949,16 @@ export default function FundDetailPage() {
         initialType={modalType}
         initialFundId={fundId}
         transactionToEdit={editingTx}
+      />
+
+      {/* Category Loan Repayment Modal */}
+      <LoanRepaymentModal
+        isOpen={isRepayModalOpen}
+        onClose={() => {
+          setIsRepayModalOpen(false);
+          setRepayingLoan(null);
+        }}
+        loan={repayingLoan}
       />
     </div>
   );

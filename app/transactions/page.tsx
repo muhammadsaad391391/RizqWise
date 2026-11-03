@@ -25,7 +25,7 @@ import {
 import { format, parseISO, isWithinInterval } from 'date-fns';
 
 export default function TransactionsPage() {
-  const { funds, transactions, categories, settings, deleteTransaction } = useFinance();
+  const { funds, transactions, categories, settings, deleteTransaction, runningBalances } = useFinance();
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -476,6 +476,7 @@ export default function TransactionsPage() {
               const fromFund = funds.find((f) => f.id === tx.fromFundId);
               // @ts-expect-error toFund
               const toFund = funds.find((f) => f.id === tx.toFundId);
+              const postBal = runningBalances[tx.id];
 
               return (
                 <div
@@ -565,6 +566,41 @@ export default function TransactionsPage() {
                         {isTransfer && '⇄ '}
                         {formatCurrency(tx.amount, settings)}
                       </div>
+
+                      {/* Running balance after transaction */}
+                      {postBal && (
+                        <div className="text-[11px] font-bold text-slate-500 mt-0.5">
+                          {selectedFundId !== 'all' ? (
+                            <span>
+                              <span className="text-[10px] text-slate-400 font-medium">Bal: </span>
+                              <span className={(postBal.fundBalancesAfter[selectedFundId] ?? 0) < 0 ? 'text-rose-600 font-black' : 'text-slate-700 font-black'}>
+                                {formatCurrency(postBal.fundBalancesAfter[selectedFundId] ?? 0, settings)}
+                              </span>
+                            </span>
+                          ) : isExpense && postBal.fundBalanceAfter !== undefined ? (
+                            <span>
+                              <span className="text-[10px] text-slate-400 font-medium">Bal: </span>
+                              <span className={postBal.fundBalanceAfter < 0 ? 'text-rose-600 font-black' : 'text-slate-700 font-black'}>
+                                {formatCurrency(postBal.fundBalanceAfter, settings)}
+                              </span>
+                            </span>
+                          ) : isTransfer && postBal.fromFundBalanceAfter !== undefined ? (
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              <span>Bal: </span>
+                              <strong className={postBal.fromFundBalanceAfter < 0 ? 'text-rose-600' : 'text-slate-700'}>
+                                {formatCurrency(postBal.fromFundBalanceAfter, settings)}
+                              </strong>
+                            </span>
+                          ) : isIncome && postBal.totalBalanceAfter !== undefined ? (
+                            <span>
+                              <span className="text-[10px] text-slate-400 font-medium">Total: </span>
+                              <span className="text-emerald-700 font-black">
+                                {formatCurrency(postBal.totalBalanceAfter, settings)}
+                              </span>
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
@@ -703,6 +739,62 @@ export default function TransactionsPage() {
                     <span className="text-blue-800 font-semibold">To Fund:</span>
                     <span className="font-bold text-slate-900">
                       {funds.find((f) => f.id === (selectedTxForDetail as TransferTransaction).toFundId)?.name}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Post-Transaction Running Balance Info */}
+              {runningBalances[selectedTxForDetail.id] && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl space-y-1.5 text-xs">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900 flex items-center justify-between">
+                    <span>Balance After Transaction</span>
+                    <span>Snapshot at that time</span>
+                  </div>
+                  {selectedTxForDetail.type === 'expense' && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Fund Balance After:</span>
+                      <span className="font-extrabold text-slate-900">
+                        {formatCurrency(
+                          runningBalances[selectedTxForDetail.id].fundBalanceAfter ?? 0,
+                          settings
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {selectedTxForDetail.type === 'transfer' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">
+                          {funds.find((f) => f.id === (selectedTxForDetail as TransferTransaction).fromFundId)?.name} After:
+                        </span>
+                        <span className="font-extrabold text-slate-900">
+                          {formatCurrency(
+                            runningBalances[selectedTxForDetail.id].fromFundBalanceAfter ?? 0,
+                            settings
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">
+                          {funds.find((f) => f.id === (selectedTxForDetail as TransferTransaction).toFundId)?.name} After:
+                        </span>
+                        <span className="font-extrabold text-slate-900">
+                          {formatCurrency(
+                            runningBalances[selectedTxForDetail.id].toFundBalanceAfter ?? 0,
+                            settings
+                          )}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between pt-1 border-t border-amber-200/60">
+                    <span className="text-slate-600">Total Available Wealth After:</span>
+                    <span className="font-extrabold text-amber-950">
+                      {formatCurrency(
+                        runningBalances[selectedTxForDetail.id].totalBalanceAfter,
+                        settings
+                      )}
                     </span>
                   </div>
                 </div>

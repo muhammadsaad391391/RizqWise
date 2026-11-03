@@ -9,6 +9,8 @@ import {
   DashboardSummary,
   AppSettings,
   DeficitFundInfo,
+  CategoryLoan,
+  TransactionPostBalance,
 } from '@/types/finance';
 import { parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -205,7 +207,8 @@ export function calculateFinancialSummary(
   funds: Fund[],
   transactions: Transaction[],
   periodStart?: Date,
-  periodEnd?: Date
+  periodEnd?: Date,
+  loans: CategoryLoan[] = []
 ): DashboardSummary {
   const calculations: Record<string, FundCalculations> = {};
 
@@ -223,6 +226,10 @@ export function calculateFinancialSummary(
       periodSpent: 0,
       periodTransfersReceived: 0,
       periodTransfersSent: 0,
+      totalOutflows: 0,
+      totalInflows: 0,
+      activeLoansBorrowed: 0,
+      activeLoansLent: 0,
       monthlyBudget: fund.monthlyBudget,
       budgetSpent: 0,
       budgetRemaining: fund.monthlyBudget,
@@ -314,6 +321,23 @@ export function calculateFinancialSummary(
     calc.transfersReceived = Math.round(calc.transfersReceived * 100) / 100;
     calc.transfersSent = Math.round(calc.transfersSent * 100) / 100;
 
+    // Outflows & Inflows from the fund's own perspective:
+    // When money is transferred out, it counts as an outflow/expense from that category.
+    // When money is transferred in, it counts as incoming into that category (without increasing overall app income).
+    calc.totalOutflows = Math.round((calc.lifetimeSpent + calc.transfersSent) * 100) / 100;
+    calc.totalInflows = Math.round((calc.lifetimeAllocated + calc.transfersReceived + (fund.openingBalance || 0)) * 100) / 100;
+
+    // Active Category Loans
+    const borrowed = (loans || [])
+      .filter((l) => l.borrowerFundId === fund.id && l.status === 'active')
+      .reduce((sum, l) => sum + (l.remainingAmount ?? (l.amount - (l.amountRepaid || 0))), 0);
+    const lent = (loans || [])
+      .filter((l) => l.lenderFundId === fund.id && l.status === 'active')
+      .reduce((sum, l) => sum + (l.remainingAmount ?? (l.amount - (l.amountRepaid || 0))), 0);
+
+    calc.activeLoansBorrowed = Math.round(borrowed * 100) / 100;
+    calc.activeLoansLent = Math.round(lent * 100) / 100;
+
     // Total Distributed & Reconciliation Tracking
     calc.totalDistributed = calc.lifetimeAllocated;
     const netTransfersOut = calc.transfersSent - calc.transfersReceived;
@@ -332,9 +356,11 @@ export function calculateFinancialSummary(
       // A fund is in deficit/debit if:
       // 1. Its currentBalance is negative (overdrawn): def = abs(currentBalance)
       // 2. Or it has an unaccounted shortfall/deviation where distributed > accounted: def = deviation
+      // 3. Or it has an active loan borrowed that is pending repayment: def = activeLoansBorrowed
       const negativeDef = calc.currentBalance < 0 ? Math.abs(calc.currentBalance) : 0;
       const deviationDef = calc.deviation && calc.deviation > 0 ? calc.deviation : 0;
-      const fundDeficit = Math.round(Math.max(negativeDef, deviationDef) * 100) / 100;
+      const loanDef = calc.activeLoansBorrowed > 0 ? calc.activeLoansBorrowed : 0;
+      const fundDeficit = Math.round(Math.max(negativeDef, deviationDef, loanDef) * 100) / 100;
 
       if (fundDeficit > 0) {
         totalDeficit += fundDeficit;
@@ -360,6 +386,9 @@ export function calculateFinancialSummary(
     }
   }
 
+  const activeLoans = (loans || []).filter((l) => l.status === 'active');
+  const totalActiveLoans = activeLoans.reduce((sum, l) => sum + (l.remainingAmount ?? (l.amount - (l.amountRepaid || 0))), 0);
+
   return {
     totalBalance: Math.round(totalBalance * 100) / 100,
     periodIncome: Math.round(periodIncome * 100) / 100,
@@ -370,6 +399,8 @@ export function calculateFinancialSummary(
     totalDeficit: Math.round(totalDeficit * 100) / 100,
     deficitFunds,
     netAvailableWealth: Math.round((positiveWealth - totalDeficit) * 100) / 100,
+    categoryLoans: loans || [],
+    totalActiveLoans: Math.round(totalActiveLoans * 100) / 100,
   };
 }
 
@@ -389,4 +420,93 @@ export function formatCurrency(
   });
 
   return pos === 'prefix' ? `${symbol} ${formattedNum}` : `${formattedNum} ${symbol}`;
+}
+
+/**
+ * Calculates the exact running balance of each fund and total wealth after each transaction.
+ * Processes transactions chronologically so that for every transaction, users can see
+ * exactly what the balance was after that transaction occurred at that time.
+ */
+export function calculateTransactionRunningBalances(
+  funds: Fund[],
+  transactions: Transaction[]
+): Record<string, TransactionPostBalance> {
+  const result: Record<string, TransactionPostBalance> = {};
+  if (!transactions || transactions.length === 0) return result;
+
+  // Initialize running balances from fund opening balances and adjustments
+  const currentFundBalances: Record<string, number> = {};
+  for (const fund of funds) {
+    currentFundBalances[fund.id] = (fund.openingBalance || 0) + (fund.manualBalanceAdjustment || 0);
+  }
+
+  // Sort transactions chronologically (oldest first)
+  const sorted = [...transactions].sort((a, b) => {
+    const timeA = new Date(a.date).getTime();
+    const timeB = new Date(b.date).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    const createA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const createB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return createA - createB;
+  });
+
+  for (const tx of sorted) {
+    if (tx.type === 'income') {
+      const inc = tx as IncomeTransaction;
+      if (inc.allocations && inc.allocations.length > 0) {
+        for (const alloc of inc.allocations) {
+          const prev = currentFundBalances[alloc.fundId] || 0;
+          currentFundBalances[alloc.fundId] = Math.round((prev + alloc.amount) * 100) / 100;
+        }
+      }
+    } else if (tx.type === 'expense') {
+      const exp = tx as ExpenseTransaction;
+      const prev = currentFundBalances[exp.fundId] || 0;
+      currentFundBalances[exp.fundId] = Math.round((prev - exp.amount) * 100) / 100;
+    } else if (tx.type === 'transfer') {
+      const trf = tx as TransferTransaction;
+      const prevFrom = currentFundBalances[trf.fromFundId] || 0;
+      currentFundBalances[trf.fromFundId] = Math.round((prevFrom - trf.amount) * 100) / 100;
+
+      const prevTo = currentFundBalances[trf.toFundId] || 0;
+      currentFundBalances[trf.toFundId] = Math.round((prevTo + trf.amount) * 100) / 100;
+    }
+
+    // Compute active total wealth after this transaction
+    let totalBal = 0;
+    for (const fund of funds) {
+      if (!fund.isArchived) {
+        totalBal += currentFundBalances[fund.id] || 0;
+      }
+    }
+    totalBal = Math.round(totalBal * 100) / 100;
+
+    let fundBalAfter: number | undefined;
+    let fromBalAfter: number | undefined;
+    let toBalAfter: number | undefined;
+
+    if (tx.type === 'expense') {
+      fundBalAfter = currentFundBalances[(tx as ExpenseTransaction).fundId];
+    } else if (tx.type === 'transfer') {
+      fromBalAfter = currentFundBalances[(tx as TransferTransaction).fromFundId];
+      toBalAfter = currentFundBalances[(tx as TransferTransaction).toFundId];
+      fundBalAfter = toBalAfter;
+    } else if (tx.type === 'income') {
+      const inc = tx as IncomeTransaction;
+      if (inc.allocations && inc.allocations.length === 1) {
+        fundBalAfter = currentFundBalances[inc.allocations[0].fundId];
+      }
+    }
+
+    result[tx.id] = {
+      transactionId: tx.id,
+      totalBalanceAfter: totalBal,
+      fundBalanceAfter: fundBalAfter,
+      fromFundBalanceAfter: fromBalAfter,
+      toFundBalanceAfter: toBalAfter,
+      fundBalancesAfter: { ...currentFundBalances },
+    };
+  }
+
+  return result;
 }

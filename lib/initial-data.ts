@@ -176,4 +176,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
       color: '#0284C7',
     },
   ],
+  categoryLoans: [],
 };

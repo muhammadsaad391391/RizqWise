@@ -12,12 +12,15 @@ import {
   DashboardSummary,
   FundAllocationSnapshot,
   CustomStatMetric,
+  CategoryLoan,
+  TransactionPostBalance,
 } from '@/types/finance';
 import { DEFAULT_FUNDS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS } from '@/lib/initial-data';
 import {
   calculateFinancialSummary,
   calculateAllocations,
   validateAllocationRules,
+  calculateTransactionRunningBalances,
 } from '@/lib/finance-engine';
 import { pushToSupabase, pullFromSupabase, getSupabaseClient } from '@/lib/supabase';
 import { startOfMonth, endOfMonth, format } from 'date-fns';
@@ -39,6 +42,13 @@ interface FinanceContextType {
     notes?: string;
     allocationMethod: 'automatic' | 'manual' | 'none';
     customAllocations?: FundAllocationSnapshot[];
+    pendingSettlements?: {
+      fromFundId: string;
+      toFundId: string;
+      amount: number;
+      loanId?: string;
+      title?: string;
+    }[];
   }) => { success: boolean; error?: string };
   addExpense: (expense: {
     amount: number;
@@ -91,10 +101,26 @@ interface FinanceContextType {
   lockAccount: () => void;
   setPassword: (password: string) => void;
   removePassword: () => void;
+  loans: CategoryLoan[];
+  addCategoryLoan: (loan: {
+    lenderFundId: string;
+    borrowerFundId: string;
+    amount: number;
+    date: string;
+    description?: string;
+    notes?: string;
+  }) => { success: boolean; error?: string };
+  repayCategoryLoan: (repayment: {
+    loanId: string;
+    amount: number;
+    date: string;
+    notes?: string;
+  }) => { success: boolean; error?: string };
   customStats: CustomStatMetric[];
   addCustomStat: (stat: Omit<CustomStatMetric, 'id'>) => { success: boolean; error?: string };
   updateCustomStat: (id: string, stat: Partial<CustomStatMetric>) => { success: boolean; error?: string };
   deleteCustomStat: (id: string) => { success: boolean };
+  runningBalances: Record<string, TransactionPostBalance>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -406,10 +432,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const periodStart = useMemo(() => startOfMonth(selectedMonth), [selectedMonth]);
   const periodEnd = useMemo(() => endOfMonth(selectedMonth), [selectedMonth]);
 
-  // Financial summary based on funds, all transactions, and current selected period
+  // Financial summary based on funds, all transactions, current selected period, and active loans
   const summary = useMemo(() => {
-    return calculateFinancialSummary(funds, transactions, periodStart, periodEnd);
-  }, [funds, transactions, periodStart, periodEnd]);
+    return calculateFinancialSummary(funds, transactions, periodStart, periodEnd, settings.categoryLoans || []);
+  }, [funds, transactions, periodStart, periodEnd, settings.categoryLoans]);
+
+  // Running post-transaction balances for ledger passbook view
+  const runningBalances = useMemo(() => {
+    return calculateTransactionRunningBalances(funds, transactions);
+  }, [funds, transactions]);
 
   const getFundById = useCallback(
     (id: string) => {
@@ -425,7 +456,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [summary]
   );
 
-  // 1. Add Income with automatic or custom allocation
+  // 1. Add Income with automatic or custom allocation and optional pending debt/loan settlements
   const addIncome = useCallback(
     ({
       amount,
@@ -435,6 +466,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       notes,
       allocationMethod,
       customAllocations,
+      pendingSettlements,
     }: {
       amount: number;
       source: string;
@@ -443,6 +475,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       notes?: string;
       allocationMethod: 'automatic' | 'manual' | 'none';
       customAllocations?: FundAllocationSnapshot[];
+      pendingSettlements?: {
+        fromFundId: string;
+        toFundId: string;
+        amount: number;
+        loanId?: string;
+        title?: string;
+      }[];
     }) => {
       if (!amount || amount <= 0) {
         return { success: false, error: 'Please enter a valid positive income amount.' };
@@ -491,16 +530,68 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
 
-      // If any fund receiving allocations had a balance shortfall/adjustment (manualBalanceAdjustment < 0),
+      // Create explicit repayment transactions for any pending loans or category debts settled from this income
+      const repaymentTxs: TransferTransaction[] = [];
+      let updatedLoans = settings.categoryLoans || [];
+
+      if (pendingSettlements && pendingSettlements.length > 0) {
+        pendingSettlements.forEach((settlement, sIdx) => {
+          if (settlement.amount <= 0) return;
+          const fromF = funds.find((f) => f.id === settlement.fromFundId);
+          const toF = funds.find((f) => f.id === settlement.toFundId);
+
+          const rTx: TransferTransaction = {
+            id: `trf_repay_${Date.now()}_${sIdx}_${Math.random().toString(36).substring(2, 7)}`,
+            type: 'transfer',
+            amount: settlement.amount,
+            fromFundId: settlement.fromFundId,
+            toFundId: settlement.toFundId,
+            date: date || format(new Date(), 'yyyy-MM-dd'),
+            title: settlement.title || `Repayment: ${fromF?.name || 'Spendable'} → ${toF?.name || 'Category'}`,
+            description: `Auto-settled from ${source || 'income'} allocation to clear pending debt/deficit`,
+            notes: `Auto-settled repayment from income`,
+            isLoanRepayment: true,
+            loanId: settlement.loanId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          repaymentTxs.push(rTx);
+
+          if (settlement.loanId) {
+            updatedLoans = updatedLoans.map((l) => {
+              if (l.id === settlement.loanId) {
+                const newRepaid = Math.round(((l.amountRepaid || 0) + settlement.amount) * 100) / 100;
+                const newRemaining = Math.max(0, Math.round((l.amount - newRepaid) * 100) / 100);
+                return {
+                  ...l,
+                  amountRepaid: newRepaid,
+                  remainingAmount: newRemaining,
+                  status: newRemaining <= 0 ? ('repaid' as const) : ('active' as const),
+                  updatedAt: new Date().toISOString(),
+                };
+              }
+              return l;
+            });
+          }
+        });
+      }
+
+      // If any fund receiving allocations or repayments had a balance shortfall/adjustment (manualBalanceAdjustment < 0),
       // absorb that deficit adjustment so the deviation returns to 0 difference.
       const nextFunds = funds.map((f) => {
         const alloc = allocations.find((a) => a.fundId === f.id);
-        if (!alloc || (f.manualBalanceAdjustment || 0) >= 0) return f;
+        const settledToThis = (pendingSettlements || [])
+          .filter((s) => s.toFundId === f.id)
+          .reduce((sum, s) => sum + s.amount, 0);
+
+        if ((f.manualBalanceAdjustment || 0) >= 0) return f;
 
         const curAdj = f.manualBalanceAdjustment || 0;
         const baselineAmount = Math.round(((amount * (f.allocationPercentage || 0)) / 100) * 100) / 100;
-        const extraCleared = Math.max(0, Math.round((alloc.amount - baselineAmount) * 100) / 100);
-        const absorb = Math.min(extraCleared > 0 ? extraCleared : alloc.amount, Math.abs(curAdj));
+        const extraCleared = alloc ? Math.max(0, Math.round((alloc.amount - baselineAmount) * 100) / 100) : 0;
+        const totalCredited = settledToThis > 0 ? settledToThis : extraCleared > 0 ? extraCleared : (alloc?.amount || 0);
+
+        const absorb = Math.min(totalCredited, Math.abs(curAdj));
         if (absorb > 0) {
           const newAdj = Math.round((curAdj + absorb) * 100) / 100;
           return { ...f, manualBalanceAdjustment: newAdj, updatedAt: new Date().toISOString() };
@@ -508,10 +599,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         return f;
       });
 
-      const nextTransactions = [newTx, ...transactions];
+      const nextSettings = { ...settings, categoryLoans: updatedLoans };
+      const nextTransactions = [newTx, ...repaymentTxs, ...transactions];
       setFunds(nextFunds);
+      setSettings(nextSettings);
       setTransactions(nextTransactions);
-      persistState(nextFunds, nextTransactions, categories, settings);
+      persistState(nextFunds, nextTransactions, categories, nextSettings);
 
       return { success: true };
     },
@@ -715,15 +808,215 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     [transactions, funds, categories, settings, persistState]
   );
 
-  // Delete transaction
+  // Delete transaction (handles reversing loans and loan repayments gracefully)
   const deleteTransaction = useCallback(
     (id: string) => {
+      const tx = transactions.find((t) => t.id === id);
       const nextTransactions = transactions.filter((t) => t.id !== id);
+
+      let nextSettings = settings;
+      if (tx && 'isLoan' in tx && tx.isLoan && (tx as any).loanId) {
+        const remainingLoans = (settings.categoryLoans || []).filter((l) => l.id !== (tx as any).loanId);
+        nextSettings = { ...settings, categoryLoans: remainingLoans };
+        setSettings(nextSettings);
+      } else if (tx && 'isLoanRepayment' in tx && tx.isLoanRepayment && (tx as any).loanId) {
+        const loanId = (tx as any).loanId;
+        const updatedLoans = (settings.categoryLoans || []).map((l) => {
+          if (l.id === loanId) {
+            const newRepaid = Math.max(0, (l.amountRepaid || 0) - tx.amount);
+            const newRem = Math.min(l.amount, l.amount - newRepaid);
+            return {
+              ...l,
+              amountRepaid: newRepaid,
+              remainingAmount: newRem,
+              status: newRem > 0 ? ('active' as const) : ('repaid' as const),
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return l;
+        });
+        nextSettings = { ...settings, categoryLoans: updatedLoans };
+        setSettings(nextSettings);
+      }
+
       setTransactions(nextTransactions);
-      persistState(funds, nextTransactions, categories, settings);
+      persistState(funds, nextTransactions, categories, nextSettings);
       return { success: true };
     },
     [transactions, funds, categories, settings, persistState]
+  );
+
+  // Add Category Loan (Lender Fund -> Borrower Fund)
+  const addCategoryLoan = useCallback(
+    ({
+      lenderFundId,
+      borrowerFundId,
+      amount,
+      date,
+      description,
+      notes,
+    }: {
+      lenderFundId: string;
+      borrowerFundId: string;
+      amount: number;
+      date: string;
+      description?: string;
+      notes?: string;
+    }) => {
+      if (!amount || amount <= 0) {
+        return { success: false, error: 'Please enter a valid positive loan amount.' };
+      }
+      if (!lenderFundId || !borrowerFundId) {
+        return { success: false, error: 'Please select both lending and borrowing categories.' };
+      }
+      if (lenderFundId === borrowerFundId) {
+        return { success: false, error: 'Lending and borrowing categories cannot be the same.' };
+      }
+
+      const lenderFund = funds.find((f) => f.id === lenderFundId);
+      const borrowerFund = funds.find((f) => f.id === borrowerFundId);
+
+      const lenderBalance = summary.fundCalculations[lenderFundId]?.currentBalance ?? 0;
+      if (lenderBalance < amount && !settings.allowNegativeBalance) {
+        return {
+          success: false,
+          error: `Insufficient balance: ${lenderFund?.name} only has ${lenderBalance} available to lend.`,
+        };
+      }
+
+      const loanId = `loan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newLoan: CategoryLoan = {
+        id: loanId,
+        lenderFundId,
+        borrowerFundId,
+        amount,
+        amountRepaid: 0,
+        remainingAmount: amount,
+        date: date || format(new Date(), 'yyyy-MM-dd'),
+        status: 'active',
+        description: description || `Category Loan: ${lenderFund?.name} → ${borrowerFund?.name}`,
+        notes,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const loanTx: TransferTransaction = {
+        id: `trf_loan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        type: 'transfer',
+        amount,
+        fromFundId: lenderFundId,
+        toFundId: borrowerFundId,
+        date: date || format(new Date(), 'yyyy-MM-dd'),
+        title: `Category Loan: ${lenderFund?.name} → ${borrowerFund?.name}`,
+        description: description || `Internal loan borrowed from ${lenderFund?.name}`,
+        notes,
+        isLoan: true,
+        loanId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updatedLoans = [...(settings.categoryLoans || []), newLoan];
+      const updatedSettings = { ...settings, categoryLoans: updatedLoans };
+      const nextTransactions = [loanTx, ...transactions];
+
+      setSettings(updatedSettings);
+      setTransactions(nextTransactions);
+      persistState(funds, nextTransactions, categories, updatedSettings);
+
+      return { success: true };
+    },
+    [funds, transactions, categories, settings, summary, persistState]
+  );
+
+  // Repay Category Loan (Borrower Fund -> Lender Fund)
+  const repayCategoryLoan = useCallback(
+    ({
+      loanId,
+      amount,
+      date,
+      notes,
+    }: {
+      loanId: string;
+      amount: number;
+      date: string;
+      notes?: string;
+    }) => {
+      const loan = (settings.categoryLoans || []).find((l) => l.id === loanId);
+      if (!loan) return { success: false, error: 'Category loan not found.' };
+
+      if (!amount || amount <= 0) {
+        return { success: false, error: 'Please enter a valid repayment amount.' };
+      }
+
+      const borrowerFund = funds.find((f) => f.id === loan.borrowerFundId);
+      const lenderFund = funds.find((f) => f.id === loan.lenderFundId);
+
+      const borrowerBalance = summary.fundCalculations[loan.borrowerFundId]?.currentBalance ?? 0;
+      if (borrowerBalance < amount && !settings.allowNegativeBalance) {
+        return {
+          success: false,
+          error: `Insufficient balance: ${borrowerFund?.name} only has ${borrowerBalance} available to repay.`,
+        };
+      }
+
+      const newRepaid = Math.round(((loan.amountRepaid || 0) + amount) * 100) / 100;
+      const newRemaining = Math.max(0, Math.round((loan.amount - newRepaid) * 100) / 100);
+      const newStatus: 'active' | 'repaid' = newRemaining <= 0 ? 'repaid' : 'active';
+
+      const updatedLoans = (settings.categoryLoans || []).map((l) =>
+        l.id === loanId
+          ? {
+              ...l,
+              amountRepaid: newRepaid,
+              remainingAmount: newRemaining,
+              status: newStatus,
+              updatedAt: new Date().toISOString(),
+            }
+          : l
+      );
+
+      const repayTx: TransferTransaction = {
+        id: `trf_repay_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        type: 'transfer',
+        amount,
+        fromFundId: loan.borrowerFundId,
+        toFundId: loan.lenderFundId,
+        date: date || format(new Date(), 'yyyy-MM-dd'),
+        title: `Loan Repayment: ${borrowerFund?.name} → ${lenderFund?.name}`,
+        description: `Repayment of category loan taken on ${loan.date}`,
+        notes,
+        isLoanRepayment: true,
+        loanId: loan.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // If lenderFund has a negative manual balance adjustment (shortfall/deficit),
+      // absorb that deficit adjustment so the deviation returns to 0
+      let nextFunds = funds;
+      if (lenderFund && (lenderFund.manualBalanceAdjustment || 0) < 0) {
+        const curAdj = lenderFund.manualBalanceAdjustment || 0;
+        const absorb = Math.min(amount, Math.abs(curAdj));
+        const newAdj = Math.round((curAdj + absorb) * 100) / 100;
+        nextFunds = funds.map((f) =>
+          f.id === loan.lenderFundId
+            ? { ...f, manualBalanceAdjustment: newAdj, updatedAt: new Date().toISOString() }
+            : f
+        );
+      }
+
+      const updatedSettings = { ...settings, categoryLoans: updatedLoans };
+      const nextTransactions = [repayTx, ...transactions];
+
+      setFunds(nextFunds);
+      setSettings(updatedSettings);
+      setTransactions(nextTransactions);
+      persistState(nextFunds, nextTransactions, categories, updatedSettings);
+
+      return { success: true };
+    },
+    [funds, transactions, categories, settings, summary, persistState]
   );
 
   // Add fund
@@ -1251,10 +1544,14 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         lockAccount,
         setPassword,
         removePassword,
+        loans: settings.categoryLoans || [],
+        addCategoryLoan,
+        repayCategoryLoan,
         customStats: settings.customStats || [],
         addCustomStat,
         updateCustomStat,
         deleteCustomStat,
+        runningBalances,
       }}
     >
       {children}

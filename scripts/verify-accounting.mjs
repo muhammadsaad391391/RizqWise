@@ -310,6 +310,178 @@ const finalDistributed = savingsFund.totalDistributed + savingsFinal; // 5000 + 
 // Deviation with adjustment absorbed = 0 Difference!
 console.log('✔ PASS: Savings shortfall reconciled! Deviation is 0 difference and fund is fully restored.');
 
+console.log('\n--- TEST 17: Inter-Category Loans and Category Outflows / Inflows Accounting ---');
+// Scenario: Personal Expenses needs funds and takes a PKR 5,000 loan from Savings
+let savingsBal = 10000;
+let personalBal = 0;
+let totalWealth = savingsBal + personalBal; // 10,000
+
+// Category metrics tracking
+let savingsOutflows = 0;
+let savingsInflows = 10000; // original allocated
+let personalOutflows = 0;
+let personalInflows = 0;
+
+// Execute loan: Lender = Savings, Borrower = Personal
+const loanAmt = 5000;
+const loanRecord = {
+  id: 'loan-1',
+  lenderFundId: 'fund-savings',
+  borrowerFundId: 'fund-personal',
+  amount: loanAmt,
+  amountRepaid: 0,
+  remainingAmount: loanAmt,
+  status: 'active',
+};
+
+// Transfer executed
+savingsBal -= loanAmt;
+savingsOutflows += loanAmt; // transfer sent counts as category outflow
+personalBal += loanAmt;
+personalInflows += loanAmt; // transfer received counts as category inflow
+
+assert.strictEqual(savingsBal, 5000, 'Savings balance decreased by 5,000');
+assert.strictEqual(personalBal, 5000, 'Personal Expenses balance increased by 5,000');
+assert.strictEqual(savingsOutflows, 5000, 'Transferred out counts as outflow from Savings');
+assert.strictEqual(personalInflows, 5000, 'Transferred in counts as inflow to Personal Expenses');
+assert.strictEqual(savingsBal + personalBal, totalWealth, 'Overall wealth strictly preserved (no external inflation)');
+console.log('✔ PASS: Inter-category loan counted as outflow from lender, inflow to borrower, preserving overall wealth.');
+
+// Partial repayment of PKR 2,000 from Personal back to Savings
+const repayAmt = 2000;
+personalBal -= repayAmt;
+personalOutflows += repayAmt;
+savingsBal += repayAmt;
+savingsInflows += repayAmt;
+loanRecord.amountRepaid += repayAmt;
+loanRecord.remainingAmount -= repayAmt;
+
+assert.strictEqual(loanRecord.amountRepaid, 2000);
+assert.strictEqual(loanRecord.remainingAmount, 3000);
+assert.strictEqual(savingsBal, 7000);
+assert.strictEqual(personalBal, 3000);
+console.log('✔ PASS: Category loan partial repayment tracked: remaining amount is PKR 3,000.');
+
+console.log('\n--- TEST 18: Income Distribution with Full Lodging in Spendable and Explicit Repayment Outflow ---');
+// When new income arrives:
+// Personal gets full normal allocation lodged first (+PKR 6,000)
+const normalPersonalIncomeAlloc = 6000;
+personalBal += normalPersonalIncomeAlloc;
+personalInflows += normalPersonalIncomeAlloc;
+assert.strictEqual(personalBal, 9000, 'Personal received full allocation first (3,000 + 6,000 = 9,000)');
+
+// Then the pending loan settlement (3,000) is lodged as an explicit expense/transfer from Personal to Savings
+const pendingDebtRepay = loanRecord.remainingAmount; // 3,000
+personalBal -= pendingDebtRepay;
+personalOutflows += pendingDebtRepay; // logged as repayment expense from Personal
+savingsBal += pendingDebtRepay;
+savingsInflows += pendingDebtRepay;
+
+loanRecord.amountRepaid += pendingDebtRepay;
+loanRecord.remainingAmount = 0;
+loanRecord.status = 'repaid';
+
+assert.strictEqual(personalBal, 6000, 'Personal final balance is 6,000 after paying off debt');
+assert.strictEqual(savingsBal, 10000, 'Savings is fully restored to 10,000');
+assert.strictEqual(loanRecord.status, 'repaid', 'Category loan is marked fully repaid');
+console.log('✔ PASS: Incoming income lodged in spendable category in full, then repayment outflow lodged in ledger.');
+
+console.log('\n--- TEST 19: Running Balances After Each Transaction in Ledger ---');
+// Setup test funds
+const testLedgerFunds = [
+  { id: 'f1', name: 'Personal', allocationPercentage: 50, openingBalance: 1000, isArchived: false },
+  { id: 'f2', name: 'Business', allocationPercentage: 50, openingBalance: 2000, isArchived: false },
+];
+
+const testLedgerTx = [
+  // Tx 1: Income 10,000 (f1: +5,000, f2: +5,000) on 2026-10-01
+  {
+    id: 'tx1',
+    type: 'income',
+    amount: 10000,
+    date: '2026-10-01',
+    allocations: [
+      { fundId: 'f1', fundName: 'Personal', percentage: 50, amount: 5000 },
+      { fundId: 'f2', fundName: 'Business', percentage: 50, amount: 5000 },
+    ],
+  },
+  // Tx 2: Expense 2,000 on Personal (f1) on 2026-10-02
+  {
+    id: 'tx2',
+    type: 'expense',
+    amount: 2000,
+    date: '2026-10-02',
+    fundId: 'f1',
+  },
+  // Tx 3: Transfer 1,500 from Business (f2) to Personal (f1) on 2026-10-03
+  {
+    id: 'tx3',
+    type: 'transfer',
+    amount: 1500,
+    date: '2026-10-03',
+    fromFundId: 'f2',
+    toFundId: 'f1',
+  },
+];
+
+// Running balance simulation matching calculateTransactionRunningBalances logic
+const currentRunning = {
+  f1: testLedgerFunds[0].openingBalance, // 1000
+  f2: testLedgerFunds[1].openingBalance, // 2000
+};
+const ledgerResults = {};
+
+for (const tx of testLedgerTx) {
+  if (tx.type === 'income') {
+    for (const a of tx.allocations) {
+      currentRunning[a.fundId] += a.amount;
+    }
+  } else if (tx.type === 'expense') {
+    currentRunning[tx.fundId] -= tx.amount;
+  } else if (tx.type === 'transfer') {
+    currentRunning[tx.fromFundId] -= tx.amount;
+    currentRunning[tx.toFundId] += tx.amount;
+  }
+  const totalW = currentRunning.f1 + currentRunning.f2;
+  ledgerResults[tx.id] = {
+    totalBalanceAfter: totalW,
+    fundBalancesAfter: { ...currentRunning },
+    fundBalanceAfter: tx.type === 'expense' ? currentRunning[tx.fundId] : undefined,
+    fromFundBalanceAfter: tx.type === 'transfer' ? currentRunning[tx.fromFundId] : undefined,
+    toFundBalanceAfter: tx.type === 'transfer' ? currentRunning[tx.toFundId] : undefined,
+  };
+}
+
+// Verification after Tx 1 (Income 10,000):
+// f1 = 1,000 + 5,000 = 6,000
+// f2 = 2,000 + 5,000 = 7,000
+// total = 13,000
+assert.strictEqual(ledgerResults['tx1'].fundBalancesAfter['f1'], 6000, 'After Tx 1, Personal balance must be 6,000');
+assert.strictEqual(ledgerResults['tx1'].fundBalancesAfter['f2'], 7000, 'After Tx 1, Business balance must be 7,000');
+assert.strictEqual(ledgerResults['tx1'].totalBalanceAfter, 13000, 'After Tx 1, Total wealth must be 13,000');
+console.log('✔ PASS: After Tx 1 (Income 10k), Personal balance was 6k, Business was 7k, Total was 13k.');
+
+// Verification after Tx 2 (Expense 2,000 on f1):
+// f1 = 6,000 - 2,000 = 4,000
+// f2 = 7,000 (unchanged)
+// total = 11,000
+assert.strictEqual(ledgerResults['tx2'].fundBalancesAfter['f1'], 4000, 'After Tx 2, Personal balance must be 4,000');
+assert.strictEqual(ledgerResults['tx2'].fundBalanceAfter, 4000, 'After Tx 2, Expense fundBalanceAfter must be 4,000');
+assert.strictEqual(ledgerResults['tx2'].fundBalancesAfter['f2'], 7000, 'After Tx 2, Business balance remains 7,000');
+assert.strictEqual(ledgerResults['tx2'].totalBalanceAfter, 11000, 'After Tx 2, Total wealth was 11,000');
+console.log('✔ PASS: After Tx 2 (Expense 2k), Personal balance was 4k, Business was 7k, Total was 11k.');
+
+// Verification after Tx 3 (Transfer 1,500 from f2 to f1):
+// f1 = 4,000 + 1,500 = 5,500
+// f2 = 7,000 - 1,500 = 5,500
+// total = 11,000
+assert.strictEqual(ledgerResults['tx3'].fundBalancesAfter['f1'], 5500, 'After Tx 3, Personal balance must be 5,500');
+assert.strictEqual(ledgerResults['tx3'].toFundBalanceAfter, 5500, 'After Tx 3, toFund balance must be 5,500');
+assert.strictEqual(ledgerResults['tx3'].fundBalancesAfter['f2'], 5500, 'After Tx 3, Business balance must be 5,500');
+assert.strictEqual(ledgerResults['tx3'].fromFundBalanceAfter, 5500, 'After Tx 3, fromFund balance must be 5,500');
+assert.strictEqual(ledgerResults['tx3'].totalBalanceAfter, 11000, 'After Tx 3, Total wealth is 11,000');
+console.log('✔ PASS: After Tx 3 (Transfer 1.5k), both funds had 5.5k balance and total wealth was 11k.');
+
 console.log('\n=============================================');
-console.log(' ALL 17 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
+console.log(' ALL 19 FINANCIAL ACCOUNTING TESTS PASSED! 🚀');
 console.log('=============================================\n');

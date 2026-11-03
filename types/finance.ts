@@ -45,6 +45,9 @@ export interface ExpenseTransaction {
   description?: string;
   notes?: string;
   paymentMethod?: string;
+  isLoanRepayment?: boolean;
+  loanId?: string;
+  repaidToFundId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +60,24 @@ export interface TransferTransaction {
   toFundId: string;
   date: string; // YYYY-MM-DD
   title: string;
+  description?: string;
+  notes?: string;
+  isLoan?: boolean;
+  isLoanRepayment?: boolean;
+  loanId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CategoryLoan {
+  id: string;
+  lenderFundId: string;     // Fund lending the money (e.g. Savings)
+  borrowerFundId: string;   // Fund receiving the loan (e.g. Personal Expenses)
+  amount: number;           // Total loan amount
+  amountRepaid: number;     // How much has been repaid
+  remainingAmount: number;  // amount - amountRepaid
+  date: string;             // YYYY-MM-DD
+  status: 'active' | 'repaid';
   description?: string;
   notes?: string;
   createdAt: string;
@@ -104,6 +125,8 @@ export interface AppSettings {
   autoLockMinutes?: number;
   // Custom Combined Stats
   customStats?: CustomStatMetric[];
+  // Inter-Category Loans
+  categoryLoans?: CategoryLoan[];
 }
 
 export interface FundCalculations {
@@ -118,6 +141,11 @@ export interface FundCalculations {
   periodSpent: number;
   periodTransfersReceived: number;
   periodTransfersSent: number;
+  // Category Total Inflows & Outflows (Accounting for transfers as fund-level expenses/income)
+  totalOutflows: number;
+  totalInflows: number;
+  activeLoansBorrowed: number;
+  activeLoansLent: number;
   monthlyBudget: number | null;
   budgetSpent: number;
   budgetRemaining: number | null;
@@ -139,6 +167,15 @@ export interface DeficitFundInfo {
   icon?: string;
 }
 
+export interface TransactionPostBalance {
+  transactionId: string;
+  totalBalanceAfter: number;
+  fundBalanceAfter?: number;
+  fromFundBalanceAfter?: number;
+  toFundBalanceAfter?: number;
+  fundBalancesAfter: Record<string, number>;
+}
+
 export interface DashboardSummary {
   totalBalance: number;
   periodIncome: number;
@@ -149,4 +186,6 @@ export interface DashboardSummary {
   totalDeficit: number;
   deficitFunds: DeficitFundInfo[];
   netAvailableWealth: number;
+  categoryLoans: CategoryLoan[];
+  totalActiveLoans: number;
 }
